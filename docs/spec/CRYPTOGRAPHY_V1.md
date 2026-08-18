@@ -1,10 +1,10 @@
-# Cryptography specification v1.0.0-draft.1
+# Cryptography specification v1.0.0-draft.2
 
 - Status: Draft — independent cryptographic review and human approval required
 - Decision set: DEC-001, 2026-08-18
 - Cryptographic profile: `mesh-messenger-crypto/1`
 
-This document selects standard constructions; it does not define a new primitive. Their application-level composition passed the mandated second-model technical reproduction but remains unapproved; implementation is blocked until a human independent cryptographic reviewer accepts the composition and `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
+This document selects standard constructions; it does not define a new primitive. An independent technical review of draft.1 failed with eight findings; the preserved report is `../adr/reviews/DEC-001-independent-review-fail-2026-08-18.txt`. Draft.2 is corrective work and has not passed independent review. Implementation remains blocked until a human independent cryptographic reviewer accepts the composition and `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
 
 ## 1. Primitive registry
 
@@ -54,19 +54,19 @@ All production randomness MUST come directly from the operating-system CSPRNG th
 
 | Value | Size | Additional rule |
 |---|---:|---|
-| Recovery entropy | 32 bytes | generated once; all-zero permitted because it is still a valid uniformly sampled outcome |
-| Device Ed25519 seed | 32 bytes | independently generated; never derived from root |
+| Recovery entropy | 32 bytes | independently generated; all-zero rejected |
+| Device Ed25519 seed | 32 bytes | independently generated; never derived from root; all-zero rejected |
 | Device instance ID | 16 bytes | independently generated; all-zero rejected |
 | MLS group ID | 32 bytes | independently generated; all-zero rejected |
 | Event/envelope/bundle/invitation/session ID | 16 bytes | independently generated; all-zero rejected |
-| HPKE recipient private key | 32 bytes | independently generated and clamped by X25519 implementation |
-| HPKE ephemeral private key | 32 bytes | fresh per encryption and clamped by implementation |
-| Rendezvous secret | 32 bytes | independently generated |
-| SQLCipher database key | 32 bytes | independently generated |
+| HPKE recipient private key | 32 bytes | independently generated and clamped by X25519 implementation; all-zero input rejected |
+| HPKE ephemeral private key | 32 bytes | fresh per encryption and clamped by implementation; all-zero input rejected |
+| Rendezvous secret | 32 bytes | independently generated; all-zero rejected |
+| SQLCipher database key | 32 bytes | independently generated; all-zero rejected |
 | AES-GCM nonce | 12 bytes | fresh random, all-zero rejected, uniqueness enforced as below |
 | CBOR/envelope/frame padding | required remainder | fresh random bytes; not reused as key material |
 
-Random IDs provide 128-bit targeted-guess/preimage cost; their generic birthday-collision strength is approximately 64 bits, with accidental collision probability approximately `n^2 / 2^129` after `n` draws. A duplicate generated ID MUST be retried at most eight times, then fail closed. Random bytes MUST never be logged, exported in diagnostics, or silently replaced with timestamps/counters.
+Every fixed-length security-critical random input in the table except padding MUST be checked before use. An all-zero result or a generated-ID collision is discarded; generation permits at most eight draws in total and then fails closed without creating partial state. A library-generated X25519 key MUST satisfy the same eight-draw bound and its public key MUST also be nonzero. Random IDs provide 128-bit targeted-guess/preimage cost; their generic birthday-collision strength is approximately 64 bits, with accidental collision probability approximately `n^2 / 2^129` after `n` draws. Random bytes MUST never be logged, exported in diagnostics, or silently replaced with timestamps/counters. The all-zero recovery value is retained only as a negative fixture; positive vectors use nonzero entropy.
 
 ## 4. Recovery root and identity
 
@@ -173,7 +173,9 @@ The HPKE plaintext body is a COSE_Sign1 object signed by the inviter device with
 }
 ```
 
-After HPKE authentication, validate that the signed inviter credential is an already accepted bilateral contact, the COSE key equals its active device key, the Welcome's signed GroupInfo/Commit is consistent with that credential, and group ownership/count rules hold. For a direct chat, require the inviter's `identity_id` to be lexicographically smaller than the recipient's. Only then atomically mark the recipient bundle consumed and join the group. Invalid unauthenticated traffic cannot consume a bundle. A concurrent second valid use loses the transaction race and is rejected. Bundle private keys are deleted on consumption or expiry.
+After HPKE authentication, validate that the signed inviter credential is an already accepted bilateral contact, the COSE key equals its active device key, the Welcome's signed GroupInfo/Commit is consistent with that credential, the Welcome is encrypted to the exact one-time KeyPackage committed by `recipient_bundle_id`, and group ownership/count rules hold. For a direct chat, require the inviter's `identity_id` to be lexicographically smaller than the recipient's. Only then atomically mark the recipient bundle consumed and join the group. Invalid unauthenticated traffic cannot consume a bundle. A concurrent second valid use loses the transaction race and is rejected. Bundle private keys are deleted on consumption or expiry.
+
+The pinned conformance harness in `vectors/v1/openmls_harness/` generated a positive 16-member application-bound group at the pinned OpenMLS revision. It measured a 474-byte recipient KeyPackage, a 6,622-byte complete TLS `MlsMessage` Welcome with the required ratchet tree, a 6,962-byte signed bootstrap COSE object, and a 7,094-byte minimum complete HPKE envelope before padding. The selected 8,192-byte class is therefore measured, not estimated. The checked fixture and exact reproduction command are retained beside the vectors. Bootstrap envelopes above the 1,536-byte LoRa ceiling are BLE/WLAN-only.
 
 For bootstrap routing:
 
@@ -205,20 +207,23 @@ The exact group configuration is:
 | Direct member count | exactly 2 |
 | Private-group member count | 2–16 |
 
-At each epoch transition, retain OpenMLS state plus the application exporter outputs in section 8 for the new current epoch and exactly three past epochs. Delete the oldest state and exporter outputs transactionally when a fourth prior epoch would be retained. No seven-day exception exists. Reaching forward-distance/tolerance limits rejects the message and moves that conversation to `REPAIR_REQUIRED` under section 11.4; limits are never raised from peer input.
+At each epoch transition, retain OpenMLS state plus the application exporter outputs in section 8 for the new current epoch and exactly three past epochs. Delete the oldest state and exporter outputs transactionally when a fourth prior epoch would be retained. No seven-day exception exists. Reaching forward-distance/tolerance limits rejects the message and moves that conversation to `REPAIR_REQUIRED` under section 11.5; limits are never raised from peer input.
 
-The immutable group owner is an `identity_id` recorded from the group bootstrap. A membership-changing Commit is accepted only if its authenticated committer credential has that identity and accepted device instance. A leaf update without membership change may come from that leaf. A v1 group MUST contain at most one leaf for each identity after a Commit.
+For a private group, the immutable group owner is an `identity_id` recorded from the group bootstrap. A membership-changing Commit is accepted only if its authenticated committer credential has that identity and accepted device instance. The owner MUST remain represented by exactly one leaf after the Commit; planned owner replacement is permitted only as one remove/add Commit whose resulting owner credential has the same `identity_id` and the newly accepted device instance. A v1 private group MUST contain 2–16 members and at most one leaf for each identity after a Commit.
+
+A direct chat has a null owner and exactly two fixed member identities. After bootstrap, every Add, Remove, PreSharedKey, ReInit, external, or other membership-changing Proposal or Commit is rejected as `POLICY_REJECT`, regardless of sender. A direct member may send only a valid leaf Update for its own leaf. Direct repair or device replacement always creates a fresh two-member group through the bilateral bootstrap procedure; it never changes membership in the active direct group.
 
 ## 8. MLS-derived outer protection
 
-For every current epoch, call the RFC 9420 exporter twice with an empty context:
+For every retained epoch, derive one group routing secret with empty context and one outer key for every member leaf in that epoch's authenticated roster:
 
 ```text
-routing_secret[32] = MLS-Exporter(L_ROUTING_EXPORTER, context = empty, length = 32)
-outer_key[16]      = MLS-Exporter(L_OUTER_EXPORTER, context = empty, length = 16)
+routing_secret[32]          = MLS-Exporter(L_ROUTING_EXPORTER, context = empty, length = 32)
+sender_context[4]           = I2OSP(sender_leaf_index, 4)
+sender_outer_key[16]        = MLS-Exporter(L_OUTER_EXPORTER, context = sender_context, length = 16)
 ```
 
-The label arguments are the UTF-8 strings in section 2. These outputs are stored encrypted with their epoch and deleted with that epoch. They MUST NOT be used as MLS input secrets or exposed through FFI.
+The label arguments are the UTF-8 strings in section 2. `sender_leaf_index` is the authenticated MLS leaf index in the roster snapshot for that epoch. The sender uses only its own context. These outputs and the exact roster snapshot are stored encrypted with their epoch and deleted with that epoch. They MUST NOT be used as MLS input secrets or exposed through FFI.
 
 For an envelope slot:
 
@@ -229,9 +234,11 @@ routing_tag = first16(HMAC-SHA256(
 ))
 ```
 
-Seal mode 1 uses `outer_key` with AES-128-GCM, the header nonce, and `normalized_header` AAD. The implementation MUST enforce a unique `(group_id, epoch, nonce)` row in the private database before encryption. On collision, draw again up to eight times. A key MUST stop encrypting after `2^24` envelopes even if nonces remain unique; force an MLS update before more sends. Decryption never writes a nonce reservation.
+Seal mode 1 uses the authenticated sender leaf's `sender_outer_key` with AES-128-GCM, the header nonce, and `normalized_header` AAD. Before encryption the implementation MUST atomically reserve a unique `(group_id, epoch, sender_leaf_index, nonce)` and increment a durable envelope count for that same tuple without the nonce. A collision is retried within the section 3 eight-draw total. One sender key MUST stop encrypting at `2^24` envelopes; the client MUST create and merge an MLS Update before any further send. No peer input may raise or reset the counter. The new epoch and sender key start a new counter. Decryption never writes a nonce reservation.
 
-The complete TLS-serialized MLS message is the outer plaintext content; therefore a successful outer authentication is not sufficient. The receiver MUST also process MLS and validate its credential, epoch, replay, owner, and application schema rules. Unknown outer keys/tags and authentication failures are indistinguishable to the peer.
+After a routing-tag match, a receiver enumerates the authenticated member leaf indices for that exact retained epoch in ascending order and performs at most one AES-GCM trial per leaf. A routing-tag collision may yield multiple local epoch candidates, but the receiver MUST perform at most 64 total sender-key trials across all candidates; more candidates fail closed before any trial. Zero or more than one successful outer authentication is `AUTH_FAILED`. For exactly one successful key context, the receiver processes the complete MLS message and MUST require its authenticated MLS epoch and sender leaf index to equal the selected epoch and `sender_leaf_index`. A mismatch is `POLICY_REJECT` with no replay, counter, membership, or application state change.
+
+The complete TLS-serialized MLS message is the outer plaintext content; therefore a successful outer authentication is not sufficient. The receiver MUST also validate the credential, replay, owner, membership, and application schema rules. Unknown outer keys/tags and authentication failures are indistinguishable to the peer.
 
 ## 9. Safety number
 
@@ -290,7 +297,15 @@ During a planned rotation, the old device MAY send the new root-signed certifica
 
 Conversation deletion removes plaintext, message/event mappings, MLS group state, exporter outputs, contact-specific routing state, and queued outbound mappings in one private transaction, then checkpoints SQLCipher. Account deletion additionally deletes all contact records, active device key, database wrapping records, and the private database. Filesystem/flash remanence and copies already held by peers are outside the deletion guarantee.
 
-### 11.4 Conversation repair
+### 11.4 Removal and rejoin
+
+When an authenticated valid owner Commit removes this client from a private group, the client atomically enters `REMOVED` and deletes every current and retained-past MLS secret/state object, MLS group ID/epoch/roster, routing secret, sender outer key, nonce reservation/count, queued outbound mapping, pending membership/repair object, and private routing index for that group. The only remaining private tombstone fields are the local conversation-row ID, user-visible group label, immutable owner contact identity, state `REMOVED`, local removal minute, history-row references, and a boolean rejoin-prompt flag. Opaque copies already in the relay database remain unassociated and expire under ordinary relay policy. No exporter or decrypt operation may run after the removal transaction.
+
+The UI retains already-decrypted history only until each row's ordinary history deadline, marks the conversation read-only as “Removed”, and shows a permanent boundary before any later rejoin. It MUST NOT display post-removal opaque traffic, send texts or receipts, offer repair, or imply that retained history proves current membership. Immediate user deletion still removes the retained history.
+
+Rejoin requires a fresh bilateral contact bundle delivered to the immutable owner. The owner adds the fresh KeyPackage in a new owner Commit and sends one fresh Welcome bootstrap. `REMOVED` moves to `REINVITE_PENDING` only after the user accepts that exact owner invitation; a valid transactional join moves it to `ACTIVE`, while expiry/cancel returns it to `REMOVED`. Rejoin restores only new current group state. It never restores deleted epoch/exporter keys, imports history, or removes the UI boundary.
+
+### 11.5 Conversation repair
 
 V1 defines no automatic MLS state transfer, resynchronization request, or state snapshot. An unauthorized non-owner membership Commit is rejected while the last valid state remains `ACTIVE`; it does not itself trigger repair. A conversation moves from `ACTIVE` to `REPAIR_REQUIRED` only when a validly authenticated owner Commit cannot be processed under RFC 9420, a fork cannot be reconciled by RFC processing, the sender-ratchet bounds are exceeded, or required current state is corrupt/missing. In `REPAIR_REQUIRED`, history remains readable while its retention permits, but new application sends, membership changes, receipts, and exporter use are disabled.
 
@@ -303,20 +318,20 @@ One explicit user action may create exactly one pending repair attempt per conve
 | `REINVITE_PENDING` | recipient validates and durably joins the exact invitation | `ACTIVE` | atomically delete old MLS/exporter/routing state, bind the new group/leaf, consume bundle/invitation, and preserve old plaintext only until its ordinary history deadline |
 | `REINVITE_PENDING` | bundle deadline expires, user cancels, or an authenticated inviter produces a policy-invalid Welcome | `REPAIR_REQUIRED` | delete pending private material and the offered bootstrap; a later attempt requires a new bundle and invitation ID |
 | `REPAIR_REQUIRED` owner group with missing/corrupt owner state | user acknowledges loss | `ABANDONED` | no successor or state import is accepted; members must form a new group |
-| any non-abandoned state | user deletes/abandons conversation | `ABANDONED` | delete cryptographic state under section 11.3; terminal for that conversation ID |
+| any state except `ABANDONED` | user deletes/abandons conversation | `ABANDONED` | delete cryptographic state under section 11.3; terminal for that conversation ID |
 
 One attempt is one `bundle_id`, one `invitation_id`, and one byte-identical bootstrap envelope. Ordinary transport retries reuse those exact envelope bytes; there is no re-encryption, automatic request, snapshot response, background retry loop, or peer-selected limit. A valid join is attempted once transactionally. Invalid unauthenticated traffic does not change state or consume the bundle. A group owner whose own state is `REPAIR_REQUIRED` cannot repair that group. Physical QR exchange is the only repair-bundle transport in v1, avoiding a new unaudited recovery channel.
 
 ## 12. Conformance and review gate
 
-Application-specific known-answer coverage MUST include root HKDF/Ed25519/identity ID, COSE device/contact/bootstrap signatures, MLS credential CBOR, safety number, the exact two MLS exporter labels with empty context, routing tags, AES-GCM envelope, proof of work, HPKE bootstrap, QR text, deterministic Noise NN handshake/transport with the required prologue, sync CBOR/framing, BLE chunks, LoRa fragments, and Linux fallback wrapping. Both independent generators must produce byte-identical canonical JSON.
+Application-specific known-answer coverage MUST include nonzero positive and all-zero negative recovery entropy; root HKDF/Ed25519/identity ID; COSE device/contact/bootstrap signatures; MLS credential CBOR; positive and negative application-bound KeyPackage/Welcome cases; safety number; routing exporter with empty context and per-sender outer exporters with the exact four-byte contexts; routing tags; AES-GCM envelope and sender-context match; proof of work; HPKE bootstrap; QR text; empty-payload Noise NN handshake/transport with the required prologue and exact handshake lengths; every sync and application record variant; BLE chunks; every LoRa size mapping; Android/Apple/Windows/Ubuntu wrapping profiles and binary records; and Linux fallback wrapping. Both independent generators must produce byte-identical canonical JSON.
 
-Standard internals are not reimplemented as production project primitives. The vector generators independently implement only published known-answer formulas and cross-check the pinned OpenMLS/snow fixtures. Implementations MUST additionally run the upstream RFC/OpenMLS conformance material for Ed25519, HPKE, MLS, AES-GCM, HKDF, CBOR/COSE, scrypt, and Noise. Passing local vectors cannot replace library/provider validation. The pinned OpenMLS suite-`0x0001` valid KeyPackage/Welcome fixture and epoch exporter-secret input are copied byte-for-byte from official files at commit `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6`, with source-file digests recorded in the vector JSON; application binding deliberately remains a separate check.
+Standard internals are not reimplemented as production project primitives. The vector generators independently implement only published known-answer formulas and cross-check the pinned OpenMLS/snow fixtures. Implementations MUST additionally run the upstream RFC/OpenMLS conformance material for Ed25519, HPKE, MLS, AES-GCM, HKDF, CBOR/COSE, scrypt, and Noise. Passing local vectors cannot replace library/provider validation. The pinned OpenMLS suite-`0x0001` upstream fixture remains a negative application-binding control. The retained Rust harness compiles against exact commit `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6`, generates the positive application-bound 16-member KeyPackage/Welcome/application message, checks joining and authenticated sender identity, and checks wrong-recipient rejection. Its source, `Cargo.lock`, output fixture, source/toolchain checks, and reproduction command are normative test evidence.
 
 The following remain approval blockers, not implementation discretion:
 
 - human independent review and acceptance of MLS exporter use, HPKE/COSE bootstrap binding, recovery authority, outer AEAD, nonce accounting, and metadata consequences;
 - physical secure-store extraction/lock tests on minimum/current devices;
 - measured scrypt performance and memory behavior on the Ubuntu reference host;
-- human security acceptance of the successful second-model reproduction and its findings;
+- a new independent reproduction and human security acceptance after the failed draft.1 review and draft.2 corrections;
 - human approval of ADR-0002 and ADR-0003 after findings are resolved.

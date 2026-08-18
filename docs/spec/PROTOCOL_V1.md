@@ -1,4 +1,4 @@
-# Protocol specification v1.0.0-draft.1
+# Protocol specification v1.0.0-draft.2
 
 - Status: Draft — independent security review and human approval required
 - Decision set: DEC-001, 2026-08-18
@@ -6,16 +6,16 @@
 
 The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative. Integers are unsigned and big-endian unless explicitly stated. Byte offsets are zero-based. Parsers MUST reject non-canonical encodings, trailing data outside a fixed padding class, duplicate CBOR keys, indefinite CBOR items, unsupported values, nonzero reserved bits, and integer overflow. There is no version fallback.
 
-Cryptographic operations, labels, and keys are defined in `CRYPTOGRAPHY_V1.md`. Golden bytes are in `vectors/v1/vectors.json`.
+Cryptographic operations, labels, and keys are defined in `CRYPTOGRAPHY_V1.md`. Golden bytes are in `vectors/v1/vectors.json`. Draft.2 corrects the eight findings in the preserved failed draft.1 review and has not yet passed a new independent review.
 
 ## 1. Limits
 
 | Constant | v1 value |
 |---|---:|
 | UTF-8 text body | 512 bytes after NFC normalization |
-| Complete envelope | 4,096 bytes |
+| Complete envelope | 8,192 bytes |
 | Envelope header | 80 bytes |
-| Padding classes | 256, 512, 1,024, 1,536, 2,048, 3,072, 4,096 bytes |
+| Padding classes | 256, 512, 1,024, 1,536, 2,048, 3,072, 4,096, 8,192 bytes |
 | Application hop limit | 8 |
 | User TTL | 1,440 minutes |
 | Control/revocation/receipt TTL | 10,080 minutes |
@@ -57,7 +57,7 @@ Every envelope is exactly `total_length` bytes and starts with this 80-byte head
 | 68 | 8 | `pow_nonce` | proof-of-work counter chosen by sender |
 | 76 | 4 | `reserved_1` | zero |
 
-`total_length`, `sealed_length`, the physical input length, and the padding class MUST agree before allocation or cryptography. A parser MUST cap the input at 4,096 bytes before reading declared sizes.
+`total_length`, `sealed_length`, the physical input length, and the padding class MUST agree before allocation or cryptography. A parser MUST cap the input at 8,192 bytes before reading declared sizes.
 
 ### 2.2 Authenticated and mutable fields
 
@@ -128,13 +128,16 @@ Expiry processing uses only this monotonic deadline after admission. Wall-clock 
 
 ### 3.2 Routing-tag slots and overlap
 
-`slot = floor(created_minute / 360)`. A sender computes exactly one tag for that slot. For a local wall time `W`, an unlocked recipient precomputes candidate tags for every unexpired slot:
+`slot = floor(created_minute / 360)`. A sender computes exactly one tag for that slot. For local wall-clock Unix minute `W`, traffic-class TTL `T`, and uint32 timestamps, compute in a wider signed integer type:
 
-- class 1: slots `floor(W/360)-4` through `floor(W/360)`;
-- classes 2–4: slots `floor(W/360)-28` through `floor(W/360)`;
-- add slot `floor(W/360)+1` only during the final ten minutes of the current slot.
+```text
+oldest_created = max(0, W - T - 9)
+newest_created = min(2^32 - 1, W + 10)
+oldest_slot    = floor(oldest_created / 360)
+newest_slot    = floor(newest_created / 360)
+```
 
-During the first ten minutes, the prior slot is already included by the ranges above. Outside the final ten minutes, a next-slot tag is rejected. After route lookup, the receiver recomputes the exact tag from the authenticated `created_minute` slot and requires constant-time equality. Candidate tags are generated for the current plus three retained MLS epochs only. A message from an older deleted epoch is undecryptable even if its TTL remains.
+The recipient precomputes every slot in that inclusive range. The `-9` is required by the strict admission test `created_minute + T + 10 > W`: during wall-minute offsets 0–8 of a new slot, this includes user slot `S-5` and control slot `S-29`; at offset 9 those slots are no longer admissible. `newest_slot` includes `S+1` only for offsets 350–359. These formulas replace approximate fixed ranges and cover the exact skew boundaries without accepting a slot that cannot contain an admissible timestamp. After route lookup, the receiver recomputes the exact tag from the authenticated `created_minute` slot and requires constant-time equality. Candidate tags are generated for the current plus three retained MLS epochs only. A message from an older deleted epoch is undecryptable even if its TTL remains.
 
 This explicit catch-up window preserves 24-hour/seven-day store-and-forward while tags still change every six hours. V1 never transmits routing-tag lists, including inside Noise; a recipient performs route lookup only after receiving an offered envelope. Tags MUST NOT appear in BLE, mDNS, HELLO, INVENTORY, or REQUEST records.
 
@@ -162,6 +165,8 @@ An MLS application message contains one map:
 
 Application messages and post-join MLS handshakes MUST use MLS PrivateMessage wire format. MLS draft extensions are disabled. KeyPackage and credential validation fails for any cipher suite other than `0x0001`.
 
+For an active direct chat, every post-bootstrap membership-changing Proposal or Commit is a policy rejection; this includes Add, Remove, PSK, ReInit, external, and any future unsupported membership mechanism. Only an authenticated leaf Update by that same direct member may proceed. For a private group, the owner and resulting-roster rules in `CRYPTOGRAPHY_V1.md` apply. A valid owner Commit that removes the local member completes MLS authentication first, then atomically enters the `REMOVED` deletion/UI/rejoin state defined there; its post-removal application content is never processed.
+
 ### 4.2 Bootstrap record
 
 An HPKE bootstrap body contains one COSE_Sign1 signed by the inviter device with the external AAD fixed in `CRYPTOGRAPHY_V1.md`. Its deterministic-CBOR payload is:
@@ -178,7 +183,9 @@ An HPKE bootstrap body contains one COSE_Sign1 signed by the inviter device with
 }
 ```
 
-The complete COSE object MUST be at most 2,000 bytes. The Welcome MUST use the ratchet-tree extension, cipher suite `0x0001`, and the one-time KeyPackage identified by `bundle_id`. The inviter credential/signature MUST match an already accepted contact and the Welcome's authenticated committer. A consumed, expired, unknown, or mismatched bundle is rejected without network detail. Direct bootstrap must result in exactly two members and a null owner. Group bootstrap must result in 2–16 members, a non-null owner equal to the inviter identity, and an owner credential matching the locally accepted group invitation.
+The complete COSE object MUST be at most 8,060 bytes, the exact content capacity of an 8,192-byte mode-2 envelope after its 80-byte header, 32-byte HPKE encapsulated key, 16-byte AEAD tag, and four-byte inner header. The Welcome MUST use the ratchet-tree extension, cipher suite `0x0001`, and the one-time KeyPackage identified by `bundle_id`. The inviter credential/signature MUST match an already accepted contact and the Welcome's authenticated committer. A consumed, expired, unknown, or mismatched bundle is rejected without network detail. Direct bootstrap must result in exactly two members and a null owner. Group bootstrap must result in 2–16 members, a non-null owner equal to the inviter identity, and an owner credential matching the locally accepted group invitation.
+
+The pinned OpenMLS harness measured the positive 16-member application-bound case: 6,622-byte Welcome, 6,962-byte signed COSE, and 7,094-byte minimum complete envelope. It therefore occupies the 8,192-byte padding class and is BLE/WLAN-only. This does not raise the LoRa ceiling. A bootstrap is eligible for LoRa only when its complete padded envelope is one of the four LoRa sizes in section 9.
 
 ### 4.3 QR contact card
 
@@ -205,11 +212,13 @@ Eviction occurs before rejecting an otherwise admissible envelope:
 
 BLE and WLAN use Noise revision 34 protocol name `Noise_NN_25519_ChaChaPoly_SHA256` with the exact prologue in `CRYPTOGRAPHY_V1.md`. Noise NN is unauthenticated: it provides per-link confidentiality/integrity only. Conversation authentication comes only from MLS/COSE.
 
+Both NN handshake payloads MUST be the empty byte string. The initiator's `-> e` message is exactly 32 bytes. The responder's `<- e, ee` message is exactly 48 bytes: 32 bytes of ephemeral public key plus the 16-byte AEAD tag on the empty payload. The sender MUST pass a zero-length payload to the Noise API; the receiver MUST require zero recovered payload bytes and the exact encoded length before entering transport mode. Any other handshake length or nonempty recovered payload is a generic protocol close. No sync or application bytes may be carried in a handshake payload.
+
 After the handshake, each encrypted transport message contains one four-byte length prefix followed by one canonical CBOR sync map. The CBOR length is 1–65,000 bytes. The prefix is inside the Noise transport ciphertext, so plaintext is at most 65,004 bytes and the 16-byte Noise tag keeps the ciphertext below Noise's 65,535-byte message limit. The map common keys are `0: 1` (version), `1: kind`, and `2: payload`:
 
 | Kind | Name | Payload and limit |
 |---:|---|---|
-| 1 | `HELLO` | `{0: session_id bstr16, 1: node_run_id bstr16, 2: max_envelope=4096, 3: max_offer=256}`; both IDs nonzero |
+| 1 | `HELLO` | `{0: session_id bstr16, 1: node_run_id bstr16, 2: max_envelope=8192, 3: max_offer=256}`; both IDs nonzero |
 | 2 | `INVENTORY` | array of 1–256 envelope IDs, sorted, unique |
 | 3 | `REQUEST` | array of 1–256 envelope IDs, sorted, unique subset of inventory |
 | 4 | `PUSH` | array of 1–15 complete envelope byte strings totaling at most 61,440 bytes |
@@ -252,11 +261,11 @@ Payload length MUST equal characteristic-value length minus 8 and MUST be no gre
 
 The mDNS instance name is the lowercase hexadecimal `node_run_id` created at process start. It advertises service `_meshmsg._tcp.local.`, TTL 120 seconds, on a randomly selected available TCP port in 49152–65535, with the sole TXT pair `v=1`. Hostnames and OS network metadata can still leak outside the application. The app advertises no display name, identity, contact, or value stable across process runs.
 
-The listener accepts at most the platform session concurrency limit. TCP connects enter Noise immediately. The first Noise handshake byte must arrive within five seconds; the complete handshake must finish within ten seconds; otherwise close. Each Noise handshake/transport ciphertext is framed outside Noise with a four-byte big-endian length capped at 65,535. The encrypted sync length prefix described in section 6 remains inside the transport ciphertext. TCP keepalive is not a liveness guarantee; all reads/writes obey the 60-second session deadline.
+The listener accepts at most the platform session concurrency limit. TCP connects enter Noise immediately. The first Noise handshake byte must arrive within five seconds; the complete handshake must finish within ten seconds; otherwise close. Each Noise handshake/transport ciphertext is framed outside Noise with a four-byte big-endian length capped at 65,535. For NN handshake flights those prefixes MUST encode exactly 32 and 48 respectively. The encrypted sync length prefix described in section 6 remains inside the transport ciphertext. TCP keepalive is not a liveness guarantee; all reads/writes obey the 60-second session deadline.
 
 ## 9. LoRa fragmentation and Meshtastic
 
-Only complete envelopes of 256, 512, 1,024, or 1,536 bytes are eligible. Fragment count is `ceil(total_length / 160)` and therefore exactly 2, 4, 7, or 10; every other count is rejected before allocation. The count uniquely fixes total length and meaningful final-fragment bytes as `{2: (256, 96), 4: (512, 32), 7: (1,024, 64), 10: (1,536, 96)}`. Each `PRIVATE_APP` payload is exactly 180 bytes:
+Only complete envelopes of 256, 512, 1,024, or 1,536 bytes are eligible. The 2,048-, 3,072-, 4,096-, and 8,192-byte classes MUST NOT enter the LoRa fragmenter and may move only over BLE/WLAN. Fragment count is `ceil(total_length / 160)` and therefore exactly 2, 4, 7, or 10; every other count is rejected before allocation. The count uniquely fixes total length and meaningful final-fragment bytes as `{2: (256, 96), 4: (512, 32), 7: (1,024, 64), 10: (1,536, 96)}`. Each `PRIVATE_APP` payload is exactly 180 bytes:
 
 | Offset | Size | Field |
 |---:|---:|---|
