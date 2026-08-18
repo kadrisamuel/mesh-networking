@@ -10,3 +10,5 @@ These records are DEC-001 draft decisions. They are normative for review, but no
 | [ADR-0004](0004-distribution-and-compliance-gates.md) | Licensing, signing, stores, and distribution | Draft — qualified legal and human approval required |
 
 The five files in `docs/spec/` and the versioned fixtures in `docs/spec/vectors/v1/` are part of these decisions. If prose conflicts, the exact constants and byte layouts in the v1 specifications govern after approval.
+
+The final independent review of draft.1 failed. Its byte-preserved report is [`reviews/DEC-001-independent-review-fail-2026-08-18.txt`](reviews/DEC-001-independent-review-fail-2026-08-18.txt). Draft.2 corrective changes and regenerated evidence await a new independent review and every required human approval.

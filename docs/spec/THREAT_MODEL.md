@@ -1,4 +1,4 @@
-# Threat model v1.0.0-draft.1
+# Threat model v1.0.0-draft.2
 
 - Status: Draft — independent security review and human approval required
 - Decision set: DEC-001, 2026-08-18
@@ -94,13 +94,13 @@ An implementation is security-invalid if any invariant fails:
 3. Unsupported version/suite/algorithm/extension fails closed without downgrade.
 4. AEAD/HPKE associated data is exactly the normalized header; only hop remainder and proof-of-work nonce are mutable.
 5. Same-ID offers are compared over normalized header plus sealed body; valid hop/PoW-only variants merge deterministically and immutable differences are collisions.
-6. `(group, epoch, AES-GCM nonce)` is unique and durably reserved; each epoch encrypts at most `2^24` outer envelopes.
+6. The outer AES-GCM key is exporter-derived separately for every authenticated sender leaf and epoch. `(group, epoch, sender leaf, nonce)` is unique and durably reserved, and each sender/epoch key encrypts at most `2^24` envelopes. Receivers try at most 64 retained sender contexts and require the decrypted MLS sender/epoch to match the successful context.
 7. An envelope is not parsed beyond its outer container, displayed, or persisted privately until all applicable outer and MLS/COSE checks pass. A custody ACK before those checks means only that the complete opaque envelope was durably stored under relay limits; it conveys no authentication or delivery claim.
 8. Custody/radio acknowledgements never produce `delivered`; group delivery/read receipts do not exist.
 9. Sender timestamps never select eviction order or extend local retention beyond the class cap.
 10. Current plus three past MLS epochs is the complete delayed-key window; deleted epoch/exporter secrets do not return from backups.
 11. A root-signed replacement remains pending until each contact explicitly confirms the full safety number and replacement action.
-12. Group membership commits authenticate to the stored owner identity; groups contain at most 16 leaves and one leaf per identity.
+12. Private-group membership Commits authenticate to the stored owner identity; direct-chat membership changes are always rejected; groups contain at most 16 leaves and one leaf per identity. A locally removed member atomically deletes every group secret and enters read-only `REMOVED` state.
 13. Lock closes SQLCipher, clears UI plaintext, and zeroizes process-held secrets while relay SQLite remains keyless and opaque.
 14. Unauthenticated/unknown-route objects cannot consume the verified-control reserve, regardless of claimed traffic class.
 15. Production logs/diagnostics contain none of the sensitive values prohibited in `ARCHITECTURE.md`.
@@ -165,7 +165,7 @@ Redacted diagnostics may contain only exact software versions, coarse platform m
 
 The following are explicit blockers:
 
-- **Security:** the mandated second-model technical review passed, but no human independent reviewer has approved recovery/credential semantics, MLS ownership enforcement, exporter-derived outer encryption, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
+- **Security:** the preserved draft.1 independent review failed with eight findings. Draft.2 corrective work has not received a new independent result, and no human reviewer has approved recovery/credential semantics, MLS ownership enforcement, exporter-derived per-sender outer encryption, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
 - **Hardware:** no actual phone, desktop, radio, antenna, battery, or secure-store extraction evidence is recorded.
 - **RF/legal:** no qualified person has approved Sweden/EU transmit conditions for an actual configuration; the engineering profile is not legal advice.
 - **Licensing/distribution:** AGPL/store terms, linked SQLCipher/OpenMLS dependencies, Meshtastic GPL/generated protobuf treatment, cryptography controls, notices/source obligations, and distribution territories lack qualified review.

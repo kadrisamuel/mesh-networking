@@ -9,13 +9,15 @@ This record is not signed. DEC-001 remains blocked and all specifications remain
 | ADR-0003 | Product owner, independent security reviewer, and RF-qualified reviewer | Name, date, source revision, vector digest, RF scope, approve/reject | Not reviewed |
 | ADR-0004 | Product owner, qualified legal reviewer, release owner, and RF-qualified reviewer | Names, dates, source revision, scoped written determinations, approve/reject | Not reviewed |
 | Five normative specifications | Product owner and engineering lead | Names, date, source revision, specification version, approve/reject | Not reviewed |
-| v1 golden vectors | Independent reproducer using `gpt-5.6-sol` at xhigh plus human security reviewer | Both generator commands, byte-identical digest, security-choice checklist, human acceptance | Automated reproduction PASS on 2026-08-18 at SHA-256 `cc991844bf2987e2ce36216ee87c1af8ce9bc75cb5280765553ba04ee9c939c2`; human acceptance not reviewed |
+| v1 golden vectors | Independent reproducer using `gpt-5.6-sol` at xhigh plus human security reviewer | Both generator commands, byte-identical digest, security-choice checklist, human acceptance | **FAIL** for draft.1 at commit `f00c53d3ff263602937150b4339dd79a230ec4d3`: byte reproduction succeeded, but final independent review found eight unresolved defects. Draft.2 regeneration/review and human acceptance are pending. |
 
-## Automated technical review evidence — not approval
+## Failed independent technical review — supersedes prior PASS claim
 
-On 2026-08-18, a separate `gpt-5.6-sol` xhigh reviewer ran the Python and Node.js generators, compared their complete canonical JSON byte-for-byte, checked the checked-in digest above, and independently reviewed representative derivations, source anchors, binary layouts, parse ordering, collision handling, LoRa padding, recovery/bootstrap roles, platform-key profiles, platform pins, and release-tag provenance. Its first pass found blocking collision-vector and bilateral-recovery inconsistencies. Those findings were corrected; its final report was `PASS` with no unresolved security-critical choice, blocking inconsistency, or high-severity defect.
+On 2026-08-18, draft.1's Python and Node generators reproduced byte-identical SHA-256 `cc991844bf2987e2ce36216ee87c1af8ce9bc75cb5280765553ba04ee9c939c2`. A preliminary report described that state as passing. The later final independent review of commit `f00c53d3ff263602937150b4339dd79a230ec4d3` found two high-, five medium-, and one low-severity finding. Its outcome is `FAIL`, and it supersedes the preliminary PASS statement everywhere.
 
-This evidence satisfies only DEC-001's required second-model reproduction. It is not a signature, cryptographic approval, legal opinion, RF determination, hardware result, or product approval. The vector row and DEC-001 remain blocked until a named human security reviewer accepts the reproduction and composition against an immutable source revision.
+The complete report is preserved byte-for-byte at [`reviews/DEC-001-independent-review-fail-2026-08-18.txt`](reviews/DEC-001-independent-review-fail-2026-08-18.txt), SHA-256 `2e059d6c1cfa56206e4c984966a70691d06f7fe0ebf7080f0cb3b772314893df`. The findings cover shared outer-key nonce accounting, the unmeasured 16-member bootstrap, all-zero recovery entropy, routing-slot boundaries, direct/removal membership state, incomplete vectors, an unbounded fragmentation sample, and Noise handshake payloads/lengths.
+
+Draft.2 corrective documents, harnesses, and vectors are not an independent review result. DEC-001 remains blocked until a new independent reproducer checks the complete corrected revision and a named human security reviewer accepts the reproduction and composition. None of this evidence is a signature, cryptographic approval, legal opinion, RF determination, hardware result, or product approval.
 
 ## Approval semantics
 
@@ -23,7 +25,7 @@ An approval is valid only when it identifies all reviewed files, their Git tree 
 
 ## Recorded blockers at draft publication
 
-1. Human independent cryptographic composition review and findings acceptance are absent; the automated technical pass does not satisfy this gate.
+1. A new independent cryptographic composition review and human findings acceptance are absent; the prior final technical result is FAIL.
 2. Human security acceptance of the reproduced vectors and security-choice checklist is absent.
 3. Reference phones, desktops, and radios are not inventoried or physically qualified.
 4. EU/Swedish RF compliance has not been determined for an actual radio/antenna/test venue.

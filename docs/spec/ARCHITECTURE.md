@@ -1,4 +1,4 @@
-# Architecture specification v1.0.0-draft.1
+# Architecture specification v1.0.0-draft.2
 
 - Status: Draft — human approval required; implementation is blocked
 - Decision set: DEC-001, 2026-08-18
@@ -105,15 +105,15 @@ Clearing relay cache MUST NOT delete private chat history. Deleting a conversati
 
 ## 5. Conversation and device rules
 
-- A direct chat is exactly two MLS members.
+- A direct chat is exactly two fixed MLS members after bootstrap. Because it has no owner, every post-bootstrap membership-changing Proposal or Commit is rejected; only a member's own leaf Update is allowed.
 - A private group has 2–16 members, including its immutable owner.
-- Only the owner credential may create a membership-changing Commit. Non-owner membership Commits MUST be rejected while retaining the last valid `ACTIVE` state. Members MAY make leaf updates; non-owner add/remove proposals are requests that only the owner may commit.
+- Only the private-group owner credential may create a membership-changing Commit. Non-owner membership Commits MUST be rejected while retaining the last valid `ACTIVE` state. Members MAY make leaf updates; non-owner add/remove proposals are requests that only the owner may commit.
 - There is at most one locally pending owner Commit. A later proposal is queued against the resulting epoch. Conflicting incoming owner Commits are resolved by RFC 9420 processing; an unreconciled valid-owner fork moves the conversation to `REPAIR_REQUIRED`, never an application-selected fork.
 - Current epoch plus exactly three past epochs are retained. On merging the fourth newer epoch, the oldest past-epoch secrets are deleted. Time does not extend or shorten this limit.
 - One root identity has exactly one explicitly accepted active device instance per contact and one leaf per group. No certificate is automatically “newest”; replacement occurs only through the contact-by-contact procedure in `CRYPTOGRAPHY_V1.md`.
 - A root-signed device-replacement notice is only a pending signal, optionally carried through an old authenticated MLS session during planned rotation. Revocation becomes effective separately when a contact accepts replacement or a group owner removes/swaps the old leaf. There is no global broadcast revocation in v1.
 - Recovery restores identity authority, not private storage, message history, contacts, group membership, or MLS state.
-- Conversation repair states are `ACTIVE`, `REPAIR_REQUIRED`, `REINVITE_PENDING`, and `ABANDONED`. V1 has no automatic state-transfer or resynchronization message. The exact transitions and one-attempt bound are in `CRYPTOGRAPHY_V1.md`; transport sync moves opaque envelopes only.
+- Conversation states are `ACTIVE`, `REPAIR_REQUIRED`, `REMOVED`, `REINVITE_PENDING`, and `ABANDONED`. A valid owner removal atomically enters `REMOVED`, deletes all group cryptographic/routing state, and leaves only read-only locally retained history plus a non-secret tombstone. Rejoin uses a fresh owner invitation and preserves a visible history boundary; no deleted key or state returns. V1 has no automatic state-transfer or resynchronization message. The exact transitions and one-attempt bound are in `CRYPTOGRAPHY_V1.md`; transport sync moves opaque envelopes only.
 
 ## 6. Transport topology
 
@@ -227,7 +227,7 @@ Release builds MUST emit no plaintext, recovery words, QR/contact payloads, keys
 
 Implementation remains blocked until all ADRs and specifications are human-approved. Independently:
 
-- security-sensitive implementation remains blocked until a human independent reviewer approves the composition and accepts the reproduced v1 vectors; the mandated second-model technical reproduction has passed but is not approval;
+- security-sensitive implementation remains blocked until a new independent review resolves and accepts the preserved failed draft.1 findings and a human reviewer approves the corrected composition and reproduced v1 vectors;
 - RF transmission remains blocked until hardware inventory and jurisdiction-specific compliance are signed;
 - public/signed distribution remains blocked until qualified legal review resolves AGPL/store, linked dependencies, generated protobufs, notices/source obligations, cryptography distribution, privacy, and territorial requirements;
 - release signing remains blocked until a human-owned key-custody, notarization, rotation, and incident process is approved;

@@ -1,0 +1,231 @@
+• # FAIL
+
+  Commit f00c53d3 is not suitable to enter human
+  approval. Vector reproduction passes, but two high-
+  severity design defects and several normative gaps
+  remain.
+
+  ## Findings
+
+  1. HIGH — Group-wide AES-GCM nonce uniqueness cannot be
+     enforced.
+     Every group member derives the same epoch outer_key,
+     but nonce reservations and the 2^24 limit are local
+     to each device. Receivers explicitly do not record
+     nonce reservations. Sixteen members could
+     independently produce 2^28 encryptions under one
+     key, with an approximate random-nonce collision
+     probability of 2^-41. Use per-sender outer keys or
+     another reviewed nonce-partitioning construction.
+     docs/spec/CRYPTOGRAPHY_V1.md:214, docs/spec/
+     CRYPTOGRAPHY_V1.md:232, docs/spec/THREAT_MODEL.md:97
+
+  2. HIGH — The 16-member group requirement cannot fit
+     the bootstrap limits.
+     The checked-in MLS BasicCredential identity is 199
+     bytes. Sixteen credentials plus mandatory 64-byte
+     leaf signatures alone require at least 4,208 bytes—
+     before keys, tree nodes, Welcome, COSE, HPKE, or
+     envelope overhead. This exceeds both the 2,000-byte
+     bootstrap COSE cap and 4,096-byte envelope cap. The
+     required ratchet-tree extension makes the
+     contradiction unavoidable.
+     docs/spec/CRYPTOGRAPHY_V1.md:124, docs/spec/
+     CRYPTOGRAPHY_V1.md:198, docs/spec/PROTOCOL_V1.md:16,
+     docs/spec/PROTOCOL_V1.md:181
+
+  3. MEDIUM — All-zero recovery entropy should fail
+     closed.
+     Under an ideal uniform sampler it is valid with
+     probability 2^-256, but accepting it defeats a
+     nearly free check for zero-filled buffers or a
+     catastrophically stuck RNG. It produces the
+     published mnemonic and root in the vectors. Reject
+     all-zero recovery entropy and fail after bounded
+     retries; preferably apply the same sentinel check to
+     every security-critical random key. The all-zero
+     case can remain a negative derivation fixture.
+     docs/spec/CRYPTOGRAPHY_V1.md:53, docs/spec/
+     CRYPTOGRAPHY_V1.md:57, docs/spec/vectors/v1/
+     vectors.json:95
+
+  4. MEDIUM — Routing-tag overlap omits valid oldest
+     slots.
+     At the start of slot S, a user envelope from S-5 can
+     still satisfy expires+10 > W, yet only S-4…S are
+     searched. Control traffic similarly needs S-29
+     during the first ten minutes, not only S-28…S. Valid
+     envelopes can therefore pass time admission but be
+     unroutable.
+     docs/spec/PROTOCOL_V1.md:121, docs/spec/
+     PROTOCOL_V1.md:131, docs/adr/0003-envelope-relay-
+     and-transport.md:15
+
+  5. MEDIUM — Direct-chat membership authorization and
+     removal transitions are incomplete.
+     Direct chats have a null owner, while membership
+     authorization is defined only in terms of an owner.
+     The specification never explicitly rejects all
+     direct-chat membership-changing Commits. It also
+     does not define the state entered by a client
+     removed from a group.
+     docs/spec/CRYPTOGRAPHY_V1.md:210, docs/spec/
+     PROTOCOL_V1.md:181, docs/spec/CRYPTOGRAPHY_V1.md:295
+
+  6. MEDIUM — Golden-vector coverage does not meet DEC-
+     001’s “every derivation and binary format”
+     criterion.
+     L_DATABASE_WRAP_AAD, Android wrapping, and Windows
+     DPAPI-entropy/record encoding have no vectors.
+     Several sync/application variants and LoRa size
+     mappings are also absent. Additionally, the only
+     KeyPackage/Welcome is deliberately application-
+     mismatched; the expected rejection is a hard-coded
+     string, not independently validated, and there is no
+     positive application-bound bootstrap vector.
+     tasks/00_FOUNDATION_AND_DECISIONS.md:22, docs/spec/
+     vectors/v1/README.md:42, docs/spec/vectors/v1/
+     README.md:48, docs/spec/vectors/v1/
+     generate_vectors.py:725
+
+  7. MEDIUM — At least one acceptance sample is not
+     executable as written.
+     PRO-FRAG-001 requires “all loss/duplicate/order
+     patterns”; duplicate patterns are unbounded and no
+     finite schedule/count is defined, yet the row has a
+     180-second timeout. This fails DEC-001’s exact-
+     sample requirement.
+     docs/spec/TEST_MATRIX.md:68,
+     tasks/00_FOUNDATION_AND_DECISIONS.md:26
+
+  8. LOW — Noise handshake payload encoding is
+     unspecified.
+     Vectors use empty handshake payloads, but the
+     protocol does not require or validate this. A
+     conforming implementation could place application
+     data in Noise NN’s unauthenticated first flight.
+     Require empty payloads and exact handshake message
+     lengths.
+     docs/spec/PROTOCOL_V1.md:206, docs/spec/
+     PROTOCOL_V1.md:249
+
+  ## Exact reproduction commands and results
+
+  git rev-parse
+  f00c53d3ff263602937150b4339dd79a230ec4d3^{commit}
+  f00c53d3ff263602937150b4339dd79a230ec4d3
+
+  python3 --version
+  Python 3.14.4
+
+  python3 -c 'import cryptography;
+  print(cryptography.__version__)'
+  46.0.7
+
+  node --version
+  v25.9.0
+
+  python3 docs/spec/vectors/v1/generate_vectors.py
+  --output /tmp/dec001-review.0idGa4/vectors-python.json
+  exit 0, no output
+
+  node docs/spec/vectors/v1/generate_vectors.mjs
+  --output /tmp/dec001-review.0idGa4/vectors-node.json
+  exit 0, no output
+
+  cmp /tmp/dec001-review.0idGa4/vectors-python.json /tmp/
+  dec001-review.0idGa4/vectors-node.json
+  exit 0, no output
+
+  cmp /tmp/dec001-review.0idGa4/vectors-python.json docs/
+  spec/vectors/v1/vectors.json
+  exit 0, no output
+
+  cmp /tmp/dec001-review.0idGa4/vectors-node.json docs/
+  spec/vectors/v1/vectors.json
+  exit 0, no output
+
+  shasum -a 256 /tmp/dec001-review.0idGa4/vectors-
+  python.json /tmp/dec001-review.0idGa4/vectors-node.json
+  docs/spec/vectors/v1/vectors.json
+
+  cc991844bf2987e2ce36216ee87c1af8ce9bc75cb5280765553ba04
+  ee9c939c2  /tmp/dec001-review.0idGa4/vectors-
+  python.json
+
+  cc991844bf2987e2ce36216ee87c1af8ce9bc75cb5280765553ba04
+  ee9c939c2  /tmp/dec001-review.0idGa4/vectors-node.json
+
+  cc991844bf2987e2ce36216ee87c1af8ce9bc75cb5280765553ba04
+  ee9c939c2  docs/spec/vectors/v1/vectors.json
+
+  Upstream fixture verification:
+
+  shasum -a 256 /tmp/dec001-openmls-welcome.json /tmp/
+  dec001-openmls-key-schedule.json /tmp/dec001-snow.txt
+
+  06be9d5c99817ef2545e4b15b8e73fd9b604685a8e55b59ca168eda
+  98e236502  /tmp/dec001-openmls-welcome.json
+
+  05aa9a68bd2538ace72d8c53375984cc728ef62220ebf314df67570
+  8546d97a7  /tmp/dec001-openmls-key-schedule.json
+
+  69da433305fd045f6c9f01b656662a389d022688986fd39fbe7af00
+  9cd402fd3  /tmp/dec001-snow.txt
+
+  Final repository check:
+
+  git status --short
+  (no output)
+
+  git diff --quiet && git diff --cached --quiet
+  exit 0
+
+  ## Source pins
+
+  No Git-tag or fixture-hash discrepancies were found.
+  Flutter, Dart, flutter_rust_bridge, OpenMLS, SQLCipher,
+  Meshtastic protobufs/firmware, Rust, and snow
+  direct/peeled refs matched the recorded values. The AGP
+  8.13/API-36 ceiling also agrees with the [official](https://developer.android.com/build/releases/agp-8-13-0-release-notes)
+  [compatibility table](https://developer.android.com/build/releases/agp-8-13-0-release-notes)
+  ([https://developer.android.com/build/releases/agp-8-13-0-release-notes](https://developer.android.com/build/releases/agp-8-13-0-release-notes)).
+
+  Remaining provenance gaps:
+
+  - SQLCipher’s tag signature is still unverified because
+    the authoritative signer key is unavailable, as
+    already recorded.
+
+  - Google’s factory-image page is terms-gated, so the
+    Pixel 8 archive SHA-256 could not be independently
+    retrieved; this is unverified, not a detected
+    mismatch. [Official factory-image page](https://developers.google.com/android/images)
+    ([https://developers.google.com/android/images](https://developers.google.com/android/images))
+
+  ## Unresolved security choices
+
+  Before approval, the specification must resolve:
+
+  - per-sender outer-key/nonce allocation and enforceable
+    key-use limits;
+
+  - rejection of all-zero recovery entropy;
+  - direct-chat membership Commit policy and removed-
+    member state;
+
+  - group-size versus Welcome/bootstrap/envelope limits;
+  - complete positive and negative application-bound
+    vectors;
+
+  - exact Noise handshake payload rules.
+
+  Existing human-risk decisions also remain unsigned:
+  three-past-epoch retention, contact-local recovery/
+  revocation, 18-bit PoW, mutable hop fields, unaudited
+  snow usage, platform key-wrapping profiles, scrypt
+  parameters, and Meshtastic beta firmware.
+
+  Human approval suitability: NO. Revise the normative
+  documents and vectors, reproduce again, then request
+  human security approval.
