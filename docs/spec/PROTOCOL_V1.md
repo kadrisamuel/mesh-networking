@@ -106,9 +106,11 @@ External bytes are processed in this exact order:
 5. charge source/session offered-ID and byte counters, including duplicates and tentative collisions, and reject if their limits are exceeded;
 6. locate any existing ID and compare canonical content; a canonical mismatch is an ID collision, an exact admitted byte string is a duplicate, and a mutable-only variant continues;
 7. enforce global row/byte quotas for a new canonical object; an existing canonical object consumes no second global row;
-8. if a key is available, authenticate/decrypt and validate inner canonical content;
-9. atomically commit a new canonical object or merge the selected mutable values into its existing row;
-10. emit custody ACK only after durable commit.
+8. atomically commit a new canonical object or merge the selected mutable values into its existing opaque relay row;
+9. immediately queue custody status 0 for a new durable row or status 1 for a durable canonical duplicate/mutable merge, before route lookup or any cryptographic operation;
+10. as local post-commit work only, look up candidate routes, authenticate/decrypt, validate inner canonical content, and transactionally create any resulting private state.
+
+Steps 1–9 are the complete peer-visible relay-admission path and execute identically whether the routing tag is unknown, known with invalid ciphertext, or known with valid ciphertext. A known-route authentication failure leaves the committed object as an ordinary opaque relay row until its existing monotonic expiry or uniform eviction. It MUST NOT change the queued ACK, session response, forwarding eligibility, inventory visibility/order, retention deadline, stored hops/PoW form, quota class, or peer-visible error behavior. Neither route knowledge nor any authentication/decryption result may be stored in the relay database. Successful private processing records its idempotency/delivery state only in the private database and MUST NOT remove, reprioritize, or mutate the relay copy. A crash after relay commit but before ACK transmission is recovered by the peer's byte-identical retry, which receives canonical-duplicate status.
 
 The same envelope ID with different canonical content is an attack: discard the offered bytes, retain the first admitted canonical object, close that peer session, and increment only an aggregate collision counter. Identical bytes and valid mutable-only variants are duplicates and may receive duplicate custody status. Invalid mutable variants are rejected and never alter the stored form.
 
@@ -193,18 +195,17 @@ The presentation form is ASCII `meshmsg:v1:` followed by unpadded base64url of a
 
 ## 5. Relay quotas and eviction
 
-The hard global limits are both 52,428,800 envelope bytes and 10,000 envelope rows; reaching either is full. Of these, 5,242,880 bytes and 1,000 rows are reserved for cryptographically verified classes 2–4. Class 1 and every locked, unknown-route, or not-yet-authenticated object share the 47,185,920-byte/9,000-row general limit, regardless of claimed header class. After successful outer and MLS/COSE authentication, an unlocked endpoint atomically marks the object verified and may account it to the control reserve. Verified control traffic may use unused general capacity.
+The relay store has one opaque pool with hard global limits of 52,428,800 complete-envelope bytes and 10,000 rows; reaching either is full. Every admitted object uses that same pool regardless of claimed traffic class, lock state, route knowledge, or later authentication result. V1 has no authenticated-control reserve in the relay database because such reclassification would make future eviction/inventory behavior depend on private authentication. An authenticated control message may create bounded private state after relay commit, but its relay copy remains an ordinary opaque row.
 
-`traffic_class` is authenticated by the outer container only for a recipient with the key; it is untrusted quota input before then. An opaque courier can therefore preserve a claimed seven-day control TTL but cannot consume reserved control rows/bytes. Attackers can still spend valid proof of work to occupy general capacity for the claimed TTL; this bounded availability risk is explicit and no relay guesses whether an unknown route is legitimate.
+`traffic_class` is authenticated by the outer container only for a recipient with the key and is therefore untrusted relay metadata. Before private processing it selects only the structurally required TTL relation and resulting monotonic deadline; it never selects a quota pool, eviction priority, forwarding priority, or ACK behavior. Attackers can spend valid proof of work to occupy the single bounded pool for the claimed TTL. This availability cost is accepted to prevent route/authentication oracles.
 
 For each Noise session and direction, accept at most 256 newly offered envelope IDs and 1,048,576 total envelope bytes, whichever is reached first. Duplicates count toward offered IDs and bytes so they cannot bypass work limits. For a connection that has not completed an authenticated MLS/COSE operation, additionally accept at most 64 new envelopes and 262,144 bytes in any 60-second session. The session closes at 60 seconds regardless of progress. Maximum concurrent sessions are four on mobile and sixteen on desktop; excess peers receive only a generic busy close.
 
-Eviction occurs before rejecting an otherwise admissible envelope:
+Eviction occurs before rejecting an otherwise admissible new canonical envelope:
 
 1. delete monotonic-expired entries;
 2. delete structurally invalid rows found by integrity scan;
-3. for general admission, evict oldest general rows until both general limits fit;
-4. for verified-control admission, evict oldest general rows, then oldest verified-control rows if required.
+3. evict oldest opaque rows until both global limits fit.
 
 “Oldest” is ascending local first-seen monotonic sequence, then lexicographic envelope ID. No sender timestamp influences eviction order. If the incoming object alone exceeds its applicable limit, reject it. Quota accounting uses complete stored envelope bytes, not declared plaintext size or filesystem allocation.
 
@@ -222,11 +223,11 @@ After the handshake, each encrypted transport message contains one four-byte len
 | 2 | `INVENTORY` | array of 1–256 envelope IDs, sorted, unique |
 | 3 | `REQUEST` | array of 1–256 envelope IDs, sorted, unique subset of inventory |
 | 4 | `PUSH` | array of 1–15 complete envelope byte strings totaling at most 61,440 bytes |
-| 5 | `CUSTODY_ACK` | array of 1–256 `[envelope_id, status]`; status 0 stored, 1 canonical duplicate including a valid mutable-only variant |
+| 5 | `CUSTODY_ACK` | array of 1–256 `[envelope_id, status]`; status 0 durably stored, 1 durable canonical duplicate including a valid mutable-only merge; neither status reports route/authentication state |
 | 6 | `GOODBYE` | reason 0 complete, 1 quota, 2 timeout, 3 superseded |
 | 7 | `ERROR` | generic reason 0 protocol or 1 busy; immediately close |
 
-Each side sends exactly one HELLO first. `session_id` is fresh per Noise session; `node_run_id` is the process value from `ARCHITECTURE.md`. Inventories contain only unexpired envelopes with positive stored hops, ordered by local first-seen monotonic sequence then envelope ID, and MUST be chunked across records. V1 performs no route negotiation: this bounded inventory selection is identical whether or not the peer knows any route. A receiver requests only absent IDs, PUSHes only requested IDs, and acknowledges only after durable relay/private commit. Receipt of an unrequested envelope, out-of-order first message, limit violation, or second HELLO is a generic protocol close.
+Each side sends exactly one HELLO first. `session_id` is fresh per Noise session; `node_run_id` is the process value from `ARCHITECTURE.md`. Inventories contain only unexpired envelopes with positive stored hops, ordered by local first-seen monotonic sequence then envelope ID, and MUST be chunked across records. V1 performs no route negotiation: inventory membership/order and forwarding selection depend only on opaque relay fields and are identical whether or not the local private database knows or authenticates a route. A receiver requests only absent IDs, PUSHes only requested IDs, and queues its custody ACK immediately after durable relay commit and before private route processing. Receipt of an unrequested envelope, out-of-order first message, limit violation, or second HELLO is a generic protocol close.
 
 After both HELLOs, concurrent sessions with the same remote `node_run_id` and transport class are superseded deterministically. For each session compute `pair_id = min(local_session_id, remote_session_id) || max(local_session_id, remote_session_id)` using unsigned lexicographic order. Both endpoints keep the session with the lexicographically smallest pair ID and send GOODBYE reason 3 on every loser; equal pair IDs on distinct connections close both as protocol errors. BLE and WLAN are separate transport classes and do not supersede one another. This rule is an availability/deduplication rule, not identity authentication.
 

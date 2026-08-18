@@ -55,7 +55,7 @@ States are `COLD`, `LOCKED_RELAY`, `UNLOCKED`, and `SHUTTING_DOWN`.
 1. Process start enters `COLD`, generates a fresh nonzero random 16-byte `node_run_id`, opens only the relay database, initializes bounded transports, then enters `LOCKED_RELAY`. The ID lives only for that process run, appears only inside Noise and as the lowercase-hex WLAN mDNS instance name, and is erased on shutdown.
 2. Successful platform-store or passphrase unlock unwraps the private database key, opens SQLCipher, loads MLS state, and enters `UNLOCKED`.
 3. OS screen lock, explicit lock, 30 seconds continuously backgrounded, or five minutes without user input while foregrounded MUST atomically stop plaintext work, close SQLCipher, clear UI plaintext, zeroize secret buffers, and return to `LOCKED_RELAY`.
-4. `LOCKED_RELAY` MAY ingest and forward complete opaque envelopes. It MUST NOT derive routing tags; it can forward only stored objects or objects offered by peers under unknown-route policy.
+4. `LOCKED_RELAY` MAY ingest and forward complete opaque envelopes. It MUST NOT derive routing tags; it can forward only stored objects or objects offered by peers under the uniform opaque relay-admission policy.
 5. Shutdown cancels transports, checkpoints each database separately, zeroizes secrets, and enters `SHUTTING_DOWN`; a repeated shutdown request has no additional effect.
 
 A setting MAY shorten but MUST NOT lengthen the five-minute foreground timeout or 30-second background timeout in v1.
@@ -99,7 +99,9 @@ Plaintext message history is retained for at most 10,080 minutes after its local
 
 ### 4.2 Relay database
 
-The relay database is unencrypted because it must remain available while locked and contains only already sealed envelopes. Its complete allowed schema is: envelope bytes, envelope ID, total length, traffic class, locally observed first/last monotonic times, local expiry deadline, source transport class, forwarding bitset, and non-sensitive quota counters. Values copied from authenticated headers are untrusted until the unlocked core authenticates them; locked relay admission uses the structural/PoW rules only.
+The relay database is unencrypted because it must remain available while locked and contains only already sealed envelopes. Its complete allowed schema is: envelope bytes, envelope ID, total length, claimed traffic class, locally observed first/last monotonic times, local expiry deadline, source transport class, forwarding bitset, and non-sensitive quota counters. It MUST NOT contain a route-known flag, authentication/decryption result, private-delivery result, conversation association, verified-control classification, or any field derived from private keys. Values copied from the header remain untrusted relay input even after private processing.
+
+Relay admission performs structural, time, proof-of-work, collision, session, and uniform global-quota checks, then durably stores or merges the opaque envelope. It queues the custody ACK immediately after that commit and before route lookup. Route lookup, authentication, and private delivery are idempotent post-commit work whose results live only in the private database. Unknown-route and known-route authentication failures retain and forward their relay copies identically; successful delivery does not remove, reprioritize, or otherwise mutate the relay row.
 
 Clearing relay cache MUST NOT delete private chat history. Deleting a conversation MUST remove its private plaintext, MLS state, routing secrets, and local outbound mapping immediately; unrelated opaque relay copies remain until ordinary expiry or explicit cache clear.
 
@@ -117,7 +119,7 @@ Clearing relay cache MUST NOT delete private chat history. Deleting a conversati
 
 ## 6. Transport topology
 
-All transports move the same complete v1 envelope or its specified fragments. Gateways use the envelope ID only as the lookup key, then apply the canonical-content comparison, mutable-field merge, and collision handling in `PROTOCOL_V1.md`; an ID alone never proves equality. They forward an admitted canonical envelope no more than once per destination transport instance. Transport-internal acknowledgements never authenticate a conversation peer.
+All transports move the same complete v1 envelope or its specified fragments. Gateways use the envelope ID only as the lookup key, then apply the canonical-content comparison, mutable-field merge, and collision handling in `PROTOCOL_V1.md`; an ID alone never proves equality. They forward an admitted canonical envelope no more than once per destination transport instance. Transport-internal acknowledgements report only opaque durable custody, are queued before route lookup, and never authenticate a conversation peer.
 
 | Platform | Phone-mesh BLE | WLAN/hotspot | Meshtastic |
 |---|---|---|---|

@@ -238,7 +238,7 @@ Seal mode 1 uses the authenticated sender leaf's `sender_outer_key` with AES-128
 
 After a routing-tag match, a receiver enumerates the authenticated member leaf indices for that exact retained epoch in ascending order and performs at most one AES-GCM trial per leaf. A routing-tag collision may yield multiple local epoch candidates, but the receiver MUST perform at most 64 total sender-key trials across all candidates; more candidates fail closed before any trial. Zero or more than one successful outer authentication is `AUTH_FAILED`. For exactly one successful key context, the receiver processes the complete MLS message and MUST require its authenticated MLS epoch and sender leaf index to equal the selected epoch and `sender_leaf_index`. A mismatch is `POLICY_REJECT` with no replay, counter, membership, or application state change.
 
-The complete TLS-serialized MLS message is the outer plaintext content; therefore a successful outer authentication is not sufficient. The receiver MUST also validate the credential, replay, owner, membership, and application schema rules. Unknown outer keys/tags and authentication failures are indistinguishable to the peer.
+The complete TLS-serialized MLS message is the outer plaintext content; therefore a successful outer authentication is not sufficient. The receiver MUST also validate the credential, replay, owner, membership, and application schema rules. All of this is local post-relay-commit processing: custody status is already queued, and neither route lookup nor authentication may change the opaque relay row, inventory, forwarding, retention, session response, or peer-visible error. Unknown outer keys/tags and authentication failures are therefore indistinguishable to the peer.
 
 ## 9. Safety number
 

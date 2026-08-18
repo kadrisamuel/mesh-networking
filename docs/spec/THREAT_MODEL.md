@@ -95,14 +95,14 @@ An implementation is security-invalid if any invariant fails:
 4. AEAD/HPKE associated data is exactly the normalized header; only hop remainder and proof-of-work nonce are mutable.
 5. Same-ID offers are compared over normalized header plus sealed body; valid hop/PoW-only variants merge deterministically and immutable differences are collisions.
 6. The outer AES-GCM key is exporter-derived separately for every authenticated sender leaf and epoch. `(group, epoch, sender leaf, nonce)` is unique and durably reserved, and each sender/epoch key encrypts at most `2^24` envelopes. Receivers try at most 64 retained sender contexts and require the decrypted MLS sender/epoch to match the successful context.
-7. An envelope is not parsed beyond its outer container, displayed, or persisted privately until all applicable outer and MLS/COSE checks pass. A custody ACK before those checks means only that the complete opaque envelope was durably stored under relay limits; it conveys no authentication or delivery claim.
+7. Structural/time/proof-of-work/collision/quota admission durably stores every admissible envelope in the single opaque relay pool and queues its custody ACK before route lookup. An envelope is not parsed beyond its outer container, displayed, or persisted privately until all applicable outer and MLS/COSE checks pass. Unknown route, known route with invalid ciphertext, and known route with valid ciphertext have the same relay/ACK/session/forwarding/inventory/expiry behavior; only the valid case may additionally create private state after ACK queueing.
 8. Custody/radio acknowledgements never produce `delivered`; group delivery/read receipts do not exist.
 9. Sender timestamps never select eviction order or extend local retention beyond the class cap.
 10. Current plus three past MLS epochs is the complete delayed-key window; deleted epoch/exporter secrets do not return from backups.
 11. A root-signed replacement remains pending until each contact explicitly confirms the full safety number and replacement action.
 12. Private-group membership Commits authenticate to the stored owner identity; direct-chat membership changes are always rejected; groups contain at most 16 leaves and one leaf per identity. A locally removed member atomically deletes every group secret and enters read-only `REMOVED` state.
 13. Lock closes SQLCipher, clears UI plaintext, and zeroizes process-held secrets while relay SQLite remains keyless and opaque.
-14. Unauthenticated/unknown-route objects cannot consume the verified-control reserve, regardless of claimed traffic class.
+14. Route knowledge and authentication results never enter the relay database or change relay quota, eviction, retention, inventory, forwarding, ACK, or peer-visible error behavior. All opaque objects use one uniform bounded relay pool.
 15. Production logs/diagnostics contain none of the sensitive values prohibited in `ARCHITECTURE.md`.
 16. Meshtastic channel encryption, Noise NN, proof of work, and mutable hop count are never described as end-to-end authentication.
 17. Plaintext history expires against the private database's wall-clock high-water mark; an observed backward clock step latches rollback and deletes existing history before display, while overdue rows are deleted on unlock.
@@ -112,7 +112,7 @@ An implementation is security-invalid if any invariant fails:
 | Attack/failure | Required response | Residual risk |
 |---|---|---|
 | Malformed/oversized envelope or CBOR | Reject before large allocation; generic close/counter | CPU used for bounded parse |
-| Unknown-envelope flood | Require 18-bit work; per-session/global quota and deterministic eviction | Distributed attackers can consume bandwidth/battery and evict user traffic |
+| Opaque-envelope flood | Require 18-bit work; per-session/single-global-pool quota and deterministic uniform eviction | Distributed attackers can consume bandwidth/battery and evict user or control traffic; no private classification protects relay rows |
 | Proof-of-work precomputation/reuse | Work binds complete header/sealed bytes; duplicates count against session quota | A captured valid envelope can still be replayed until ID/TTL suppression |
 | Same ID on multiple honest paths | Compare canonical content; merge valid mutable-only variants using max hops/min valid PoW | Mutable hops remain attacker-resettable and provide no security boundary |
 | ID collision with different canonical content | Keep first canonical object, discard second, close session, aggregate alert | Deliberate targeted collision is impractical; compromised sender can cause denial for an ID it chose |
@@ -120,7 +120,8 @@ An implementation is security-invalid if any invariant fails:
 | Mutable-hop reset | Continue TTL/dedup/quota enforcement | Malicious relay can circulate until expiry and across fresh caches |
 | Noise MITM | MLS/COSE rejects impersonation; expose no detailed error | MITM can correlate, drop, reorder, and issue false custody ACK after storing bytes |
 | Fragment collision/memory flood | Compare only meaningful final-fragment prefix, drop conflicting meaningful bytes, cap 128/2 MiB/10 min | RF airtime/battery denial remains; random tail is unauthenticated and ignored |
-| Claimed control-class flood | Charge every unverified object to general capacity; reserve control only after local authentication | Valid-work objects can still occupy general capacity and claim seven-day retention |
+| Claimed control-class flood | Charge every object to the same opaque pool; claimed class affects only structurally checked TTL, never priority | Valid-work objects can occupy the bounded pool and claim seven-day retention; accepting this prevents an authentication oracle |
+| Observed routing-tag probe | Commit and ACK admissible bytes before lookup; retain unknown and failed-authentication objects identically; keep results private | An attacker still observes ordinary encounter/session timing but cannot distinguish route possession from custody behavior |
 | Forged/old device certificate | Verify root; require currently accepted instance | Phrase thief can produce a valid new certificate and socially engineer acceptance |
 | Lost member device | Owner swaps/removes leaf, contact starts fresh direct group | Messages already delivered and old retained epochs remain readable on compromised endpoint |
 | Lost group owner | Do not accept non-owner succession | Group becomes administratively unrecoverable |
