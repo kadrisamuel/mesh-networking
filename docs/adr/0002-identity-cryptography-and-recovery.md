@@ -54,4 +54,4 @@ Use only the standards and library constructions named in the cryptography speci
 
 ## Human decision required
 
-Approve or reject the recovery loss model, bilateral contact bootstrap, one-active-device/contact-acceptance rule, explicit repair state machine, owner-only group changes, three-past-epoch limit, exact platform key-wrapping profiles, database split, and cryptographic-review gate as one decision.
+Approve or reject, as one decision, the nonzero recovery and permanent history-loss model; bilateral contact bootstrap; one-active-device/contact-acceptance rule; fixed two-member direct-chat policy; private-group owner-only changes; complete `REMOVED`/re-invitation state and key deletion; three-past-epoch limit; per-sender exporter-derived outer keys, bounded receiver trials, sender-context match, and per-sender/epoch nonce limits; exact platform key-wrapping profiles; database split; and cryptographic-review gate.

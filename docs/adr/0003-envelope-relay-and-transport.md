@@ -47,4 +47,4 @@ Delivery states are `queued`, `accepted_by_mesh`, `delivered`, and `expired`. A 
 
 ## Human decision required
 
-Approve or reject the authenticated/mutable split, routing overlap, quota and ACK semantics, fixed BLE discovery, opportunistic Noise use, foreground limitation, and exact LoRa ceiling as one decision.
+Approve or reject, as one decision, the authenticated/mutable split; exact skew-boundary routing-slot search; quota and ACK semantics; the measured 8,192-byte bootstrap class and BLE/WLAN-only rule above 1,536 bytes; fixed BLE discovery; opportunistic Noise use with empty 32/48-byte NN flights; foreground limitation; and unchanged 1,536-byte LoRa ceiling.
