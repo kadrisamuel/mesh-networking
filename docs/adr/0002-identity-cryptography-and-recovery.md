@@ -1,0 +1,52 @@
+# ADR-0002: Identity, cryptography, recovery, and storage
+
+- Status: Draft — independent security review and human approval required
+- Decision date: 2026-08-18
+- Scope: DEC-001 only
+
+## Context
+
+Recovery, MLS state, outer-envelope privacy, and storage locking must compose standard primitives without creating a new cipher or key exchange.
+
+## Proposed decision
+
+Use RFC 9420 MLS with cipher suite `0x0001` (`MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`) through pinned OpenMLS 0.8.1. Direct chats are two-member groups. Private groups contain 2–16 members. Only the immutable group owner may commit additions and removals; owner succession is outside v1. Store the current MLS epoch plus exactly three past epochs using OpenMLS `max_past_epochs(3)`. Do not implement the plan's seven-day delayed-key alternative because the pinned release has no approved time-based retention mechanism.
+
+Create 256 random recovery bits and encode them as 24 BIP-39 English words. BIP-39 is encoding only: its passphrase/PBKDF2 seed is not used. Derive one Ed25519 root seed with the HKDF-SHA-256 rule and fixed label in `CRYPTOGRAPHY_V1.md`. Device signing keys, MLS keys, and one-time bootstrap HPKE keys are independently random. Root-sign device certificates using deterministic CBOR and COSE_Sign1 EdDSA. Remove recovery entropy and the root private key after the user proves recovery-code possession.
+
+There is exactly one explicitly accepted device instance per identity in each contact record and one leaf per identity in each MLS group. Recovery creates a fresh root-signed instance and restores identity authority only; it restores neither history nor MLS state. There is no numeric “newest” counter because a recovery phrase cannot know state held only by a lost device. Each contact must explicitly compare/accept the replacement certificate and start fresh direct MLS state. Group owners must explicitly swap the old leaf for the replacement. Relayed certificates never auto-replace a contact. There is no global revocation service.
+
+The plan's “signed revocation” is narrowed to a root-signed replacement certificate optionally announced inside an existing authenticated MLS session during planned rotation. It creates a pending prompt only. Local acceptance revokes the old contact instance; a group removal/swap Commit revokes the old group leaf. V1 has no broadcast revocation beacon or automatic global effect.
+
+Keep private state in a SQLCipher database and opaque relay envelopes in a separate ordinary SQLite database. The private database key is a random 32-byte key protected by the platform secure store. Locking closes the private database and zeroizes process-held key/plaintext buffers while leaving the relay database usable. The relay database is forbidden from containing display names, contacts, group identifiers, routing-secret mappings, keys, plaintext, or decrypted metadata. Linux Secret Service is primary; the exact RFC 7914 scrypt passphrase fallback is defined in `CRYPTOGRAPHY_V1.md`.
+
+Use only the standards and library constructions named in the cryptography specification. The MLS-exporter outer wrap, recovery hierarchy, HPKE bootstrap container, and COSE schemas are a protocol composition that requires independent cryptographic review before implementation even though each primitive is standardized.
+
+## Consequences
+
+- Lost history is an intentional recovery property.
+- An old device cannot be silently displaced; availability depends on contact-by-contact action.
+- Messages delayed beyond three previous MLS epochs become undecryptable regardless of wall-clock age.
+- Relay operation while locked exposes opaque traffic timing and volume but not private database contents.
+
+## Approval blockers
+
+- No independent cryptographic review of the composition has been recorded.
+- Secure-store behavior, key zeroization, and locked extraction have not been tested on physical minimum/current devices.
+- Linux fallback usability and memory cost have not been measured on reference hardware.
+
+## Sources
+
+- [RFC 9420: Messaging Layer Security](https://www.rfc-editor.org/rfc/rfc9420.html)
+- [OpenMLS 0.8.1 release](https://github.com/openmls/openmls/releases/tag/openmls-v0.8.1)
+- [RFC 5869: HKDF](https://www.rfc-editor.org/rfc/rfc5869.html)
+- [RFC 8032: Ed25519](https://www.rfc-editor.org/rfc/rfc8032.html)
+- [RFC 9180: HPKE](https://www.rfc-editor.org/rfc/rfc9180.html)
+- [RFC 8949: CBOR](https://www.rfc-editor.org/rfc/rfc8949.html)
+- [RFC 9052 and RFC 9053: COSE](https://www.rfc-editor.org/rfc/rfc9052.html)
+- [BIP-39 at pinned source commit](https://github.com/bitcoin/bips/blob/857a7debc6625a3dadbaecee1ee7b2ed5e8ada75/bip-0039.mediawiki)
+- [RFC 7914: scrypt](https://www.rfc-editor.org/rfc/rfc7914.html)
+
+## Human decision required
+
+Approve or reject the recovery loss model, one-active-device/contact-acceptance rule, owner-only group changes, three-past-epoch limit, database split, and cryptographic-review gate as one decision.
