@@ -1,6 +1,9 @@
 // Deterministic inputs are PUBLIC TEST-ONLY MATERIAL. Never use them in production.
 
-use std::{env, fs, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    env, fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use ed25519_dalek::{Signer as _, SigningKey};
 use openmls::prelude::*;
@@ -16,8 +19,7 @@ const CARGO_VERSION: &str = "cargo 1.97.1 (c980f4866 2026-06-30)";
 const L_IDENTITY_ID: &[u8] = b"mesh-messenger/v1/identity-id";
 const L_DEVICE_CERT_AAD: &[u8] = b"mesh-messenger/v1/device-certificate";
 const MEMBER_COUNT: usize = 16;
-const SUITE: Ciphersuite =
-    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
+const SUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
 fn deterministic_seed(label: &[u8], member: usize) -> [u8; 32] {
     let mut hash = Sha256::new();
@@ -128,7 +130,10 @@ fn application_bound_identity(member: usize, issued_minute: u64) -> TestIdentity
     let signature = root_key.sign(&sig_structure).to_bytes();
     root_key
         .verifying_key()
-        .verify_strict(&sig_structure, &ed25519_dalek::Signature::from_bytes(&signature))
+        .verify_strict(
+            &sig_structure,
+            &ed25519_dalek::Signature::from_bytes(&signature),
+        )
         .unwrap();
     let certificate = cbor_array(&[
         cbor_bstr(&protected),
@@ -182,7 +187,10 @@ fn build_key_package(
 
 fn main() {
     let output_path = env::args().nth(1).expect("usage: harness OUTPUT.json");
-    let now_seconds = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let now_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let issued_minute = (now_seconds / 60).saturating_sub(1);
     let not_before = issued_minute * 60;
     let not_after = (issued_minute + 10_080) * 60;
@@ -203,7 +211,8 @@ fn main() {
         &config,
         GroupId::from_slice(b"DEC-001-16-member-measurement"),
         owner.credential_with_key.clone(),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut credential_evidence = vec![json!({
         "member": 0,
@@ -215,11 +224,13 @@ fn main() {
         let provider = Provider::default();
         let identity = application_bound_identity(member, issued_minute);
         let key_package = build_key_package(&provider, &identity, not_before, not_after);
-        group.add_members(
-            &owner_provider,
-            &owner.signer,
-            &[key_package.key_package().clone()],
-        ).unwrap();
+        group
+            .add_members(
+                &owner_provider,
+                &owner.signer,
+                &[key_package.key_package().clone()],
+            )
+            .unwrap();
         group.merge_pending_commit(&owner_provider).unwrap();
         credential_evidence.push(json!({
             "member": member,
@@ -241,12 +252,17 @@ fn main() {
             .serialized_content(),
         recipient.credential_bytes
     );
-    let key_package_tls = recipient_key_package.key_package().tls_serialize_detached().unwrap();
-    let (_commit, welcome_message, _group_info) = group.add_members(
-        &owner_provider,
-        &owner.signer,
-        &[recipient_key_package.key_package().clone()],
-    ).unwrap();
+    let key_package_tls = recipient_key_package
+        .key_package()
+        .tls_serialize_detached()
+        .unwrap();
+    let (_commit, welcome_message, _group_info) = group
+        .add_members(
+            &owner_provider,
+            &owner.signer,
+            &[recipient_key_package.key_package().clone()],
+        )
+        .unwrap();
     let welcome_tls = welcome_message.tls_serialize_detached().unwrap();
     group.merge_pending_commit(&owner_provider).unwrap();
     credential_evidence.push(json!({
@@ -271,15 +287,13 @@ fn main() {
         config.join_config(),
         welcome.clone(),
         None,
-    ).expect_err("a Welcome must not join with a non-recipient KeyPackage");
+    )
+    .expect_err("a Welcome must not join with a non-recipient KeyPackage");
     let wrong_recipient_error = format!("{wrong_recipient_error:?}");
     assert!(wrong_recipient_error.contains("NoMatchingKeyPackage"));
-    let staged = StagedWelcome::new_from_welcome(
-        &recipient_provider,
-        config.join_config(),
-        welcome,
-        None,
-    ).expect("ratchet-tree extension must make external tree unnecessary");
+    let staged =
+        StagedWelcome::new_from_welcome(&recipient_provider, config.join_config(), welcome, None)
+            .expect("ratchet-tree extension must make external tree unnecessary");
     assert_eq!(
         staged
             .welcome_sender()
@@ -293,9 +307,11 @@ fn main() {
     assert_eq!(joined_group.members().count(), MEMBER_COUNT);
     for expected in &credential_evidence {
         let expected_hash = expected["credential_sha256"].as_str().unwrap();
-        assert!(joined_group.members().any(|member| {
-            sha256_hex(member.credential.serialized_content()) == expected_hash
-        }));
+        assert!(
+            joined_group.members().any(|member| {
+                sha256_hex(member.credential.serialized_content()) == expected_hash
+            })
+        );
     }
 
     let routing_secret = group
@@ -356,9 +372,7 @@ fn main() {
     let application_message = group
         .create_message(&owner_provider, &owner.signer, &application_plaintext)
         .unwrap();
-    let application_message_tls = application_message
-        .tls_serialize_detached()
-        .unwrap();
+    let application_message_tls = application_message.tls_serialize_detached().unwrap();
     let inbound_application =
         MlsMessageIn::tls_deserialize_exact(application_message_tls.clone()).unwrap();
     let processed_application = joined_group
