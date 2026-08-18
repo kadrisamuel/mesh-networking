@@ -167,6 +167,8 @@ An MLS application message contains one map:
 
 Application messages and post-join MLS handshakes MUST use MLS PrivateMessage wire format. MLS draft extensions are disabled. KeyPackage and credential validation fails for any cipher suite other than `0x0001`.
 
+The outer-key rollover self-Update defined in `CRYPTOGRAPHY_V1.md` is a mode-1, traffic-class-2 envelope whose outer epoch and sender context are the old epoch even though its sender transaction also persists the merged new local epoch. Its complete outer bytes are immutable after that transaction. Recipients authenticate/process it under the old epoch before moving to the new one. Following every epoch transition, the local private processor MUST rescan unexpired opaque relay rows for newly processable routing tags; the scan and its results do not change relay ACK, inventory, forwarding, retention, or stored metadata.
+
 For an active direct chat, every post-bootstrap membership-changing Proposal or Commit is a policy rejection; this includes Add, Remove, PSK, ReInit, external, and any future unsupported membership mechanism. Only an authenticated leaf Update by that same direct member may proceed. For a private group, the owner and resulting-roster rules in `CRYPTOGRAPHY_V1.md` apply. A valid owner Commit that removes the local member completes MLS authentication first, then atomically enters the `REMOVED` deletion/UI/rejoin state defined there; its post-removal application content is never processed.
 
 ### 4.2 Bootstrap record
