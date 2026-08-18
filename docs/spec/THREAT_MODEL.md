@@ -93,17 +93,19 @@ An implementation is security-invalid if any invariant fails:
 2. Every external length/count is capped before allocation; canonical parsing and enum/reserved checks precede cryptography.
 3. Unsupported version/suite/algorithm/extension fails closed without downgrade.
 4. AEAD/HPKE associated data is exactly the normalized header; only hop remainder and proof-of-work nonce are mutable.
-5. `(group, epoch, AES-GCM nonce)` is unique and durably reserved; each epoch encrypts at most `2^24` outer envelopes.
-6. An envelope is not parsed internally, acknowledged, displayed, or persisted privately until all applicable outer and MLS/COSE checks pass.
-7. Custody/radio acknowledgements never produce `delivered`; group delivery/read receipts do not exist.
-8. Sender timestamps never select eviction order or extend local retention beyond the class cap.
-9. Current plus three past MLS epochs is the complete delayed-key window; deleted epoch/exporter secrets do not return from backups.
-10. A root-signed replacement remains pending until each contact explicitly confirms the full safety number and replacement action.
-11. Group membership commits authenticate to the stored owner identity; groups contain at most 16 leaves and one leaf per identity.
-12. Lock closes SQLCipher, clears UI plaintext, and zeroizes process-held secrets while relay SQLite remains keyless and opaque.
-13. Production logs/diagnostics contain none of the sensitive values prohibited in `ARCHITECTURE.md`.
-14. Meshtastic channel encryption, Noise NN, proof of work, and mutable hop count are never described as end-to-end authentication.
-15. Plaintext history expires against the private database's wall-clock high-water mark; an observed backward clock step latches rollback and deletes existing history before display, while overdue rows are deleted on unlock.
+5. Same-ID offers are compared over normalized header plus sealed body; valid hop/PoW-only variants merge deterministically and immutable differences are collisions.
+6. `(group, epoch, AES-GCM nonce)` is unique and durably reserved; each epoch encrypts at most `2^24` outer envelopes.
+7. An envelope is not parsed beyond its outer container, displayed, or persisted privately until all applicable outer and MLS/COSE checks pass. A custody ACK before those checks means only that the complete opaque envelope was durably stored under relay limits; it conveys no authentication or delivery claim.
+8. Custody/radio acknowledgements never produce `delivered`; group delivery/read receipts do not exist.
+9. Sender timestamps never select eviction order or extend local retention beyond the class cap.
+10. Current plus three past MLS epochs is the complete delayed-key window; deleted epoch/exporter secrets do not return from backups.
+11. A root-signed replacement remains pending until each contact explicitly confirms the full safety number and replacement action.
+12. Group membership commits authenticate to the stored owner identity; groups contain at most 16 leaves and one leaf per identity.
+13. Lock closes SQLCipher, clears UI plaintext, and zeroizes process-held secrets while relay SQLite remains keyless and opaque.
+14. Unauthenticated/unknown-route objects cannot consume the verified-control reserve, regardless of claimed traffic class.
+15. Production logs/diagnostics contain none of the sensitive values prohibited in `ARCHITECTURE.md`.
+16. Meshtastic channel encryption, Noise NN, proof of work, and mutable hop count are never described as end-to-end authentication.
+17. Plaintext history expires against the private database's wall-clock high-water mark; an observed backward clock step latches rollback and deletes existing history before display, while overdue rows are deleted on unlock.
 
 ## 7. Abuse and failure analysis
 
@@ -112,11 +114,13 @@ An implementation is security-invalid if any invariant fails:
 | Malformed/oversized envelope or CBOR | Reject before large allocation; generic close/counter | CPU used for bounded parse |
 | Unknown-envelope flood | Require 18-bit work; per-session/global quota and deterministic eviction | Distributed attackers can consume bandwidth/battery and evict user traffic |
 | Proof-of-work precomputation/reuse | Work binds complete header/sealed bytes; duplicates count against session quota | A captured valid envelope can still be replayed until ID/TTL suppression |
-| ID collision with different bytes | Keep first, discard second, close session, aggregate alert | Deliberate random collision is impractical; compromised sender can cause denial for that ID |
+| Same ID on multiple honest paths | Compare canonical content; merge valid mutable-only variants using max hops/min valid PoW | Mutable hops remain attacker-resettable and provide no security boundary |
+| ID collision with different canonical content | Keep first canonical object, discard second, close session, aggregate alert | Deliberate targeted collision is impractical; compromised sender can cause denial for an ID it chose |
 | Clock far future/past | Apply ten-minute admission tolerance and monotonic local deadline | Wrong local OS clock can reject valid traffic or shorten availability |
 | Mutable-hop reset | Continue TTL/dedup/quota enforcement | Malicious relay can circulate until expiry and across fresh caches |
 | Noise MITM | MLS/COSE rejects impersonation; expose no detailed error | MITM can correlate, drop, reorder, and issue false custody ACK after storing bytes |
-| Fragment collision/memory flood | Drop conflicting assembly; cap 128/2 MiB/10 min | RF airtime/battery denial remains |
+| Fragment collision/memory flood | Compare only meaningful final-fragment prefix, drop conflicting meaningful bytes, cap 128/2 MiB/10 min | RF airtime/battery denial remains; random tail is unauthenticated and ignored |
+| Claimed control-class flood | Charge every unverified object to general capacity; reserve control only after local authentication | Valid-work objects can still occupy general capacity and claim seven-day retention |
 | Forged/old device certificate | Verify root; require currently accepted instance | Phrase thief can produce a valid new certificate and socially engineer acceptance |
 | Lost member device | Owner swaps/removes leaf, contact starts fresh direct group | Messages already delivered and old retained epochs remain readable on compromised endpoint |
 | Lost group owner | Do not accept non-owner succession | Group becomes administratively unrecoverable |
@@ -145,6 +149,7 @@ UI copy and operational documents MUST state these limits before recovery confir
 - BLE advertisement privacy depends partly on OS address randomization, which the application does not control.
 - mDNS necessarily reveals a service and host/network metadata even though the app instance is random.
 - SQLCipher protects database pages, not plaintext visible to an unlocked process or external notification content.
+- Android hardware-backed Keystore availability, Apple Keychain/DPAPI extraction resistance, and Secret Service behavior are platform assumptions until the exact profiles pass physical extraction/lock tests.
 - SQLCipher does not provide trusted anti-rollback; a compromised OS that restores an older private database, or restores both clock and database to mutually plausible values while the app is stopped, can restore its history high-water mark and retained ciphertext.
 - Meshtastic firmware is beta and outside the project's security boundary.
 
@@ -160,7 +165,7 @@ Redacted diagnostics may contain only exact software versions, coarse platform m
 
 The following are explicit blockers:
 
-- **Security:** no independent review yet covers recovery/credential semantics, MLS ownership enforcement, exporter-derived outer encryption, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
+- **Security:** the mandated second-model technical review passed, but no human independent reviewer has approved recovery/credential semantics, MLS ownership enforcement, exporter-derived outer encryption, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
 - **Hardware:** no actual phone, desktop, radio, antenna, battery, or secure-store extraction evidence is recorded.
 - **RF/legal:** no qualified person has approved Sweden/EU transmit conditions for an actual configuration; the engineering profile is not legal advice.
 - **Licensing/distribution:** AGPL/store terms, linked SQLCipher/OpenMLS dependencies, Meshtastic GPL/generated protobuf treatment, cryptography controls, notices/source obligations, and distribution territories lack qualified review.

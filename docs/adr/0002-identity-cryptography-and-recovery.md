@@ -14,11 +14,15 @@ Use RFC 9420 MLS with cipher suite `0x0001` (`MLS_128_DHKEMX25519_AES128GCM_SHA2
 
 Create 256 random recovery bits and encode them as 24 BIP-39 English words. BIP-39 is encoding only: its passphrase/PBKDF2 seed is not used. Derive one Ed25519 root seed with the HKDF-SHA-256 rule and fixed label in `CRYPTOGRAPHY_V1.md`. Device signing keys, MLS keys, and one-time bootstrap HPKE keys are independently random. Root-sign device certificates using deterministic CBOR and COSE_Sign1 EdDSA. Remove recovery entropy and the root private key after the user proves recovery-code possession.
 
+Initial contact establishment is bilateral. Each person displays one independently generated QR bundle, scans the other person's bundle, and confirms the same full safety number before either contact becomes accepted. The identity with the lexicographically smaller identity ID is the sole direct-chat inviter, eliminating crossed invitations without treating ordering as authentication. Direct repair and recovery use an in-person bilateral exchange of one fresh bundle per person; group re-invitation uses one fresh invitee bundle. Each attempt has one byte-identical bootstrap envelope, and v1 has no automatic state-transfer or resynchronization protocol.
+
 There is exactly one explicitly accepted device instance per identity in each contact record and one leaf per identity in each MLS group. Recovery creates a fresh root-signed instance and restores identity authority only; it restores neither history nor MLS state. There is no numeric “newest” counter because a recovery phrase cannot know state held only by a lost device. Each contact must explicitly compare/accept the replacement certificate and start fresh direct MLS state. Group owners must explicitly swap the old leaf for the replacement. Relayed certificates never auto-replace a contact. There is no global revocation service.
+
+Conversation state is exactly `ACTIVE`, `REPAIR_REQUIRED`, `REINVITE_PENDING`, or `ABANDONED`. An unrecoverable authenticated MLS failure disables sends and exporter use. Direct contacts may explicitly re-establish a new two-member group; a group owner may explicitly replace a failed member. An owner that cannot operate its own group state leaves that group `ABANDONED` in v1. History and failed state are never copied into the replacement group.
 
 The plan's “signed revocation” is narrowed to a root-signed replacement certificate optionally announced inside an existing authenticated MLS session during planned rotation. It creates a pending prompt only. Local acceptance revokes the old contact instance; a group removal/swap Commit revokes the old group leaf. V1 has no broadcast revocation beacon or automatic global effect.
 
-Keep private state in a SQLCipher database and opaque relay envelopes in a separate ordinary SQLite database. The private database key is a random 32-byte key protected by the platform secure store. Locking closes the private database and zeroizes process-held key/plaintext buffers while leaving the relay database usable. The relay database is forbidden from containing display names, contacts, group identifiers, routing-secret mappings, keys, plaintext, or decrypted metadata. Linux Secret Service is primary; the exact RFC 7914 scrypt passphrase fallback is defined in `CRYPTOGRAPHY_V1.md`.
+Keep private state in a SQLCipher database and opaque relay envelopes in a separate ordinary SQLite database. The private database key is a random 32-byte key protected by the exact Android Keystore, Apple Data Protection Keychain, Windows user-scope DPAPI, or Ubuntu Secret Service profile and record encoding in `ARCHITECTURE.md`. Locking closes the private database and zeroizes process-held key/plaintext buffers while leaving the relay database usable. The relay database is forbidden from containing display names, contacts, group identifiers, routing-secret mappings, keys, plaintext, or decrypted metadata. Linux Secret Service is primary; the exact RFC 7914 scrypt passphrase fallback is defined in `CRYPTOGRAPHY_V1.md`.
 
 Use only the standards and library constructions named in the cryptography specification. The MLS-exporter outer wrap, recovery hierarchy, HPKE bootstrap container, and COSE schemas are a protocol composition that requires independent cryptographic review before implementation even though each primitive is standardized.
 
@@ -31,8 +35,9 @@ Use only the standards and library constructions named in the cryptography speci
 
 ## Approval blockers
 
-- No independent cryptographic review of the composition has been recorded.
+- No human independent cryptographic approval of the composition has been recorded; the required second-model technical review passed but cannot satisfy this gate.
 - Secure-store behavior, key zeroization, and locked extraction have not been tested on physical minimum/current devices.
+- The Android hardware-backed-key result, Apple Keychain protection class, Windows DPAPI scope, and Ubuntu Secret Service backend must be captured as device evidence; the specified profiles do not by themselves prove hardware-backed storage.
 - Linux fallback usability and memory cost have not been measured on reference hardware.
 
 ## Sources
@@ -49,4 +54,4 @@ Use only the standards and library constructions named in the cryptography speci
 
 ## Human decision required
 
-Approve or reject the recovery loss model, one-active-device/contact-acceptance rule, owner-only group changes, three-past-epoch limit, database split, and cryptographic-review gate as one decision.
+Approve or reject the recovery loss model, bilateral contact bootstrap, one-active-device/contact-acceptance rule, explicit repair state machine, owner-only group changes, three-past-epoch limit, exact platform key-wrapping profiles, database split, and cryptographic-review gate as one decision.

@@ -4,7 +4,7 @@
 - Decision set: DEC-001, 2026-08-18
 - Cryptographic profile: `mesh-messenger-crypto/1`
 
-This document selects standard constructions; it does not define a new primitive. Their application-level composition is unreviewed and implementation is blocked until an independent cryptographic reviewer approves it and reproduces `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
+This document selects standard constructions; it does not define a new primitive. Their application-level composition passed the mandated second-model technical reproduction but remains unapproved; implementation is blocked until a human independent cryptographic reviewer accepts the composition and `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
 
 ## 1. Primitive registry
 
@@ -43,6 +43,7 @@ Every string below is its exact UTF-8 byte sequence, without a trailing NUL, BOM
 | `L_HPKE_INFO` | `mesh-messenger/v1/bootstrap-hpke` |
 | `L_POW` | `mesh-messenger/v1/pow` |
 | `L_NOISE_PROLOGUE` | `mesh-messenger/v1/noise-sync` |
+| `L_DATABASE_WRAP_AAD` | `mesh-messenger/v1/database-key-wrap` |
 | `L_STORAGE_WRAP_AAD` | `mesh-messenger/v1/linux-storage-wrap` |
 
 `I2OSP(x, n)` means the RFC 8017 unsigned, fixed-width, big-endian encoding and fails if `x` does not fit.
@@ -65,7 +66,7 @@ All production randomness MUST come directly from the operating-system CSPRNG th
 | AES-GCM nonce | 12 bytes | fresh random, all-zero rejected, uniqueness enforced as below |
 | CBOR/envelope/frame padding | required remainder | fresh random bytes; not reused as key material |
 
-Random IDs provide 128-bit collision resistance for the MVP scale. A duplicate generated ID MUST be retried at most eight times, then fail closed. Random bytes MUST never be logged, exported in diagnostics, or silently replaced with timestamps/counters.
+Random IDs provide 128-bit targeted-guess/preimage cost; their generic birthday-collision strength is approximately 64 bits, with accidental collision probability approximately `n^2 / 2^129` after `n` draws. A duplicate generated ID MUST be retried at most eight times, then fail closed. Random bytes MUST never be logged, exported in diagnostics, or silently replaced with timestamps/counters.
 
 ## 4. Recovery root and identity
 
@@ -148,9 +149,11 @@ A contact bundle payload is:
 }
 ```
 
-The active device signs it with COSE_Sign1 and external AAD `L_CONTACT_BUNDLE_AAD`. The complete COSE object is capped at 2,048 bytes. Its KeyPackage MUST use suite `0x0001`, the exact MLS credential above, a seven-day lifetime, and a one-time init key independent of the bootstrap HPKE key. The private KeyPackage/init/HPKE material and bundle ID are committed atomically in the private database before displaying the QR.
+The active device signs it with COSE_Sign1 and external AAD `L_CONTACT_BUNDLE_AAD`. The complete COSE object is capped at 2,048 bytes. Its KeyPackage MUST use suite `0x0001`, the exact MLS credential above, a one-time init key independent of the bootstrap HPKE key, `not_before = issued_minute * 60`, and `not_after = expires_minute * 60`, rejecting arithmetic overflow. The private KeyPackage/init/HPKE material and bundle ID are committed atomically in the private database before displaying the QR.
 
-Validation order is sizes/canonical CBOR and TTL arithmetic, identity-ID recomputation, root certificate signature, device-key match, outer device signature, KeyPackage suite/credential/lifetime/signature, then explicit safety-number confirmation. Wall time may mark a bundle expired with the ten-minute skew rule but MUST NOT make an unknown root trusted.
+At scan time let `W` be local wall-clock Unix minutes and `M` a monotonic instant. Validation order is sizes/canonical CBOR and TTL arithmetic, `issued_minute <= W + 10`, `expires_minute = issued_minute + 10,080`, `expires_minute + 10 > W`, identity-ID recomputation, root certificate signature, device-key match, outer device signature, KeyPackage suite/credential/exact lifetime/signature, then explicit full safety-number confirmation. Set the immutable local bundle deadline to `M + min(10,080, max(0, expires_minute + 10 - W))` minutes. Later wall changes cannot extend it. Expiry deletes its private init/HPKE material; wall time never makes an unknown root trusted.
+
+First contact is deliberately bilateral. Both people display independently generated bundles, scan the other's card, compare the same full safety number out of band, and durably accept the other's active device before any network bootstrap is valid. For a direct chat, the side with the lexicographically smaller unsigned `identity_id` is the sole inviter; the other side waits. This deterministic role prevents two simultaneous direct groups. A one-sided scan may store a pending card for display but is not an accepted contact and cannot authorize a bootstrap. Group owners likewise establish bilateral contact with an invitee before adding that invitee.
 
 ### 6.2 Bootstrap HPKE and signed record
 
@@ -170,7 +173,7 @@ The HPKE plaintext body is a COSE_Sign1 object signed by the inviter device with
 }
 ```
 
-After HPKE authentication, validate that the signed inviter credential is an already accepted contact, the COSE key equals its active device key, the Welcome's signed GroupInfo/Commit is consistent with that credential, and group ownership/count rules hold. Only then atomically mark the recipient bundle consumed and join the group. Invalid unauthenticated traffic cannot consume a bundle. A concurrent second valid use loses the transaction race and is rejected. Bundle private keys are deleted on consumption or expiry.
+After HPKE authentication, validate that the signed inviter credential is an already accepted bilateral contact, the COSE key equals its active device key, the Welcome's signed GroupInfo/Commit is consistent with that credential, and group ownership/count rules hold. For a direct chat, require the inviter's `identity_id` to be lexicographically smaller than the recipient's. Only then atomically mark the recipient bundle consumed and join the group. Invalid unauthenticated traffic cannot consume a bundle. A concurrent second valid use loses the transaction race and is rejected. Bundle private keys are deleted on consumption or expiry.
 
 For bootstrap routing:
 
@@ -202,7 +205,7 @@ The exact group configuration is:
 | Direct member count | exactly 2 |
 | Private-group member count | 2–16 |
 
-At each epoch transition, retain OpenMLS state plus the application exporter outputs in section 8 for the new current epoch and exactly three past epochs. Delete the oldest state and exporter outputs transactionally when a fourth prior epoch would be retained. No seven-day exception exists. Reaching forward-distance/tolerance limits rejects the message and initiates bounded resynchronization; limits are never raised from peer input.
+At each epoch transition, retain OpenMLS state plus the application exporter outputs in section 8 for the new current epoch and exactly three past epochs. Delete the oldest state and exporter outputs transactionally when a fourth prior epoch would be retained. No seven-day exception exists. Reaching forward-distance/tolerance limits rejects the message and moves that conversation to `REPAIR_REQUIRED` under section 11.4; limits are never raised from peer input.
 
 The immutable group owner is an `identity_id` recorded from the group bootstrap. A membership-changing Commit is accepted only if its authenticated committer credential has that identity and accepted device instance. A leaf update without membership change may come from that leaf. A v1 group MUST contain at most one leaf for each identity after a Commit.
 
@@ -275,9 +278,9 @@ A contact becomes active only after QR validation, full safety-number confirmati
 
 1. The recovering user enters and validates all 24 words locally.
 2. The device derives the same root, creates a fresh random device key/instance, root-signs a new certificate, creates fresh one-time bundles, and erases the root again after confirmation.
-3. Each contact scans the new QR, verifies the unchanged full safety number, and explicitly chooses “replace”. Declining changes nothing.
-4. Acceptance atomically marks the prior instance revoked locally, destroys the old direct-group state, and creates a fresh two-member MLS group from the new bundle. No history or old session key is imported.
-5. For each private group, the owner must perform one membership Commit that removes the old leaf and adds the new leaf. Until that Commit, the new device is not a member and the old leaf may retain access to messages it legitimately received.
+3. The recovering user and each contact exchange fresh QR bundles in person, scan each other's bundle, verify the unchanged full safety number, and explicitly accept the recovering certificate as “replace”. Declining changes nothing; the unchanged contact device is re-confirmed, not replaced.
+4. After bilateral acceptance, the lexicographically smaller `identity_id` is the sole inviter and creates exactly one fresh two-member MLS group plus one mode-2 bootstrap using the other party's fresh one-time bundle. On a successful join, each side atomically activates the replacement direct group, destroys any locally held old direct-group/exporter/routing state, and consumes the applicable bundle/invitation. Old plaintext may remain only under ordinary history retention; no history or old session key is imported into the new group.
+5. For each private group, after the recovering user and owner have completed the bilateral acceptance in step 3, that same owner remains the sole inviter: it performs one membership Commit that removes the old leaf and adds the recovering user's fresh bundle KeyPackage, then sends one mode-2 Welcome bootstrap to that bundle. Until the recovering device validates and joins it, the new device is not a member and the old leaf may retain access to messages it legitimately received.
 
 A planned owner replacement can use one owner-authenticated Commit that swaps its old leaf for the new same-identity leaf. If the sole owner device and its MLS state are lost, that group cannot be recovered in v1; members must form a new group. No relay, timestamp, certificate issue time, predecessor hint, or root signature automatically selects a winner. A stolen recovery phrase can impersonate the identity to contacts who accept it; phrase compromise has no cryptographic revocation path in v1.
 
@@ -287,16 +290,33 @@ During a planned rotation, the old device MAY send the new root-signed certifica
 
 Conversation deletion removes plaintext, message/event mappings, MLS group state, exporter outputs, contact-specific routing state, and queued outbound mappings in one private transaction, then checkpoints SQLCipher. Account deletion additionally deletes all contact records, active device key, database wrapping records, and the private database. Filesystem/flash remanence and copies already held by peers are outside the deletion guarantee.
 
+### 11.4 Conversation repair
+
+V1 defines no automatic MLS state transfer, resynchronization request, or state snapshot. An unauthorized non-owner membership Commit is rejected while the last valid state remains `ACTIVE`; it does not itself trigger repair. A conversation moves from `ACTIVE` to `REPAIR_REQUIRED` only when a validly authenticated owner Commit cannot be processed under RFC 9420, a fork cannot be reconciled by RFC processing, the sender-ratchet bounds are exceeded, or required current state is corrupt/missing. In `REPAIR_REQUIRED`, history remains readable while its retention permits, but new application sends, membership changes, receipts, and exporter use are disabled.
+
+One explicit user action may create exactly one pending repair attempt per conversation and target identity:
+
+| From | Trigger/action | To | Exact result |
+|---|---|---|---|
+| `REPAIR_REQUIRED` direct chat | both unchanged active devices exchange fresh bilateral QR bundles and reconfirm the full safety number | `REINVITE_PENDING` | lexicographically smaller identity creates exactly one fresh two-member group and one mode-2 bootstrap using the other's one-time bundle |
+| `REPAIR_REQUIRED` non-owner group member | member gives the owner a fresh QR bundle in person; owner validates the already accepted identity/device | `REINVITE_PENDING` | active owner creates one Commit that removes the stale leaf and adds the bundle KeyPackage, then one mode-2 Welcome bootstrap |
+| `REINVITE_PENDING` | recipient validates and durably joins the exact invitation | `ACTIVE` | atomically delete old MLS/exporter/routing state, bind the new group/leaf, consume bundle/invitation, and preserve old plaintext only until its ordinary history deadline |
+| `REINVITE_PENDING` | bundle deadline expires, user cancels, or an authenticated inviter produces a policy-invalid Welcome | `REPAIR_REQUIRED` | delete pending private material and the offered bootstrap; a later attempt requires a new bundle and invitation ID |
+| `REPAIR_REQUIRED` owner group with missing/corrupt owner state | user acknowledges loss | `ABANDONED` | no successor or state import is accepted; members must form a new group |
+| any non-abandoned state | user deletes/abandons conversation | `ABANDONED` | delete cryptographic state under section 11.3; terminal for that conversation ID |
+
+One attempt is one `bundle_id`, one `invitation_id`, and one byte-identical bootstrap envelope. Ordinary transport retries reuse those exact envelope bytes; there is no re-encryption, automatic request, snapshot response, background retry loop, or peer-selected limit. A valid join is attempted once transactionally. Invalid unauthenticated traffic does not change state or consume the bundle. A group owner whose own state is `REPAIR_REQUIRED` cannot repair that group. Physical QR exchange is the only repair-bundle transport in v1, avoiding a new unaudited recovery channel.
+
 ## 12. Conformance and review gate
 
-Application-specific known-answer coverage MUST include root HKDF/Ed25519/identity ID, COSE device/contact/bootstrap signatures, MLS credential CBOR, safety number, routing tags, AES-GCM envelope, proof of work, HPKE bootstrap, QR text, sync CBOR/framing, BLE chunks, LoRa fragments, and Linux fallback wrapping. Both independent generators must produce byte-identical canonical JSON.
+Application-specific known-answer coverage MUST include root HKDF/Ed25519/identity ID, COSE device/contact/bootstrap signatures, MLS credential CBOR, safety number, the exact two MLS exporter labels with empty context, routing tags, AES-GCM envelope, proof of work, HPKE bootstrap, QR text, deterministic Noise NN handshake/transport with the required prologue, sync CBOR/framing, BLE chunks, LoRa fragments, and Linux fallback wrapping. Both independent generators must produce byte-identical canonical JSON.
 
-Standard internals are not reimplemented as project primitives. Implementations MUST additionally run the upstream RFC/OpenMLS conformance material for Ed25519, HPKE, MLS, AES-GCM, HKDF, CBOR/COSE, scrypt, and Noise. Passing local vectors cannot replace library/provider validation.
+Standard internals are not reimplemented as production project primitives. The vector generators independently implement only published known-answer formulas and cross-check the pinned OpenMLS/snow fixtures. Implementations MUST additionally run the upstream RFC/OpenMLS conformance material for Ed25519, HPKE, MLS, AES-GCM, HKDF, CBOR/COSE, scrypt, and Noise. Passing local vectors cannot replace library/provider validation. The pinned OpenMLS suite-`0x0001` valid KeyPackage/Welcome fixture and epoch exporter-secret input are copied byte-for-byte from official files at commit `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6`, with source-file digests recorded in the vector JSON; application binding deliberately remains a separate check.
 
 The following remain approval blockers, not implementation discretion:
 
-- independent review of MLS exporter use, HPKE/COSE bootstrap binding, recovery authority, outer AEAD, nonce accounting, and metadata consequences;
+- human independent review and acceptance of MLS exporter use, HPKE/COSE bootstrap binding, recovery authority, outer AEAD, nonce accounting, and metadata consequences;
 - physical secure-store extraction/lock tests on minimum/current devices;
 - measured scrypt performance and memory behavior on the Ubuntu reference host;
-- a second `gpt-5.6-sol` xhigh reproduction of every vector with a report listing no unresolved security choice;
+- human security acceptance of the successful second-model reproduction and its findings;
 - human approval of ADR-0002 and ADR-0003 after findings are resolved.

@@ -23,7 +23,7 @@ Cryptographic operations, labels, and keys are defined in `CRYPTOGRAPHY_V1.md`. 
 | Routing-tag slot | 360 minutes |
 | Proof-of-work difficulty | 18 leading zero SHA-256 bits |
 | Relay cache | 52,428,800 stored envelope bytes and 10,000 envelopes |
-| Per sync session | 256 newly offered envelopes and 1,048,576 envelope bytes per direction |
+| Per sync session | 256 offered envelope entries (duplicates included) and 1,048,576 envelope bytes per direction |
 | Sync session duration | 60 seconds from completed Noise handshake |
 | LoRa application frame | 180 bytes |
 | LoRa fragment data | 160 bytes |
@@ -93,21 +93,24 @@ The first 18 most-significant digest bits MUST be zero. Search starts at counter
 
 ### 2.5 Identity, duplication, and parse order
 
-`envelope_id` is an opaque random deduplication key, not a message identifier. A sender MUST durably reserve it before emission and MUST generate a new envelope ID and nonce for every re-encryption or retransmission that changes sealed bytes. Byte-identical transport retries retain the envelope ID and entire envelope.
+`envelope_id` is an opaque random deduplication key, not a message identifier. A sender MUST durably reserve it before emission and MUST generate a new envelope ID and nonce for every re-encryption or retransmission that changes any authenticated byte or sealed byte. Byte-identical transport retries retain the envelope ID and entire envelope.
+
+For duplicate/collision comparison, `canonical_content = normalized_header || sealed_body`. Two offers with the same envelope ID and byte-identical canonical content are the same envelope even when their transmitted `hops_remaining` or `pow_nonce` differs. Every new mutable variant must independently pass structural, time, and proof-of-work checks, counts against session offered-ID/byte limits, and consumes no new global row. Merge an admitted variant by storing the maximum valid `hops_remaining` and the numerically smallest valid `pow_nonce`; this deterministic forwarding form is not an end-to-end authenticated value. A malicious relay can still reset hops, as section 2.2 states.
 
 External bytes are processed in this exact order:
 
 1. enforce physical size cap;
 2. check magic, version, enum ranges, reserved bytes, declared lengths, and padding class;
 3. check class/TTL arithmetic and coarse time admission;
-4. check duplicate ID and conflicting-byte collision;
-5. verify proof of work;
-6. enforce source/session/global quotas;
-7. if a key is available, authenticate/decrypt and validate inner canonical content;
-8. commit the complete opaque envelope and local metadata atomically;
-9. emit custody ACK only after durable commit.
+4. verify proof of work for every offer, including duplicates and tentative collisions;
+5. charge source/session offered-ID and byte counters, including duplicates and tentative collisions, and reject if their limits are exceeded;
+6. locate any existing ID and compare canonical content; a canonical mismatch is an ID collision, an exact admitted byte string is a duplicate, and a mutable-only variant continues;
+7. enforce global row/byte quotas for a new canonical object; an existing canonical object consumes no second global row;
+8. if a key is available, authenticate/decrypt and validate inner canonical content;
+9. atomically commit a new canonical object or merge the selected mutable values into its existing row;
+10. emit custody ACK only after durable commit.
 
-The same envelope ID with different bytes is an attack: discard the offered bytes, retain the first admitted copy, close that peer session, and increment only an aggregate collision counter. Identical bytes are a duplicate and may be acknowledged as such.
+The same envelope ID with different canonical content is an attack: discard the offered bytes, retain the first admitted canonical object, close that peer session, and increment only an aggregate collision counter. Identical bytes and valid mutable-only variants are duplicates and may receive duplicate custody status. Invalid mutable variants are rejected and never alter the stored form.
 
 ## 3. Time, TTL, and routing slots
 
@@ -133,7 +136,7 @@ Expiry processing uses only this monotonic deadline after admission. Wall-clock 
 
 During the first ten minutes, the prior slot is already included by the ranges above. Outside the final ten minutes, a next-slot tag is rejected. After route lookup, the receiver recomputes the exact tag from the authenticated `created_minute` slot and requires constant-time equality. Candidate tags are generated for the current plus three retained MLS epochs only. A message from an older deleted epoch is undecryptable even if its TTL remains.
 
-This explicit catch-up window preserves 24-hour/seven-day store-and-forward while tags still change every six hours. Tag lists MUST be sent only inside Noise and MUST NOT appear in BLE or mDNS discovery.
+This explicit catch-up window preserves 24-hour/seven-day store-and-forward while tags still change every six hours. V1 never transmits routing-tag lists, including inside Noise; a recipient performs route lookup only after receiving an offered envelope. Tags MUST NOT appear in BLE, mDNS, HELLO, INVENTORY, or REQUEST records.
 
 ## 4. Canonical CBOR records
 
@@ -183,7 +186,9 @@ The presentation form is ASCII `meshmsg:v1:` followed by unpadded base64url of a
 
 ## 5. Relay quotas and eviction
 
-The hard global limits are both 52,428,800 envelope bytes and 10,000 envelope rows; reaching either is full. Of these, 5,242,880 bytes and 1,000 rows are reserved for classes 2–4. Class 1 can use at most 47,185,920 bytes and 9,000 rows. Control traffic may use unused general capacity.
+The hard global limits are both 52,428,800 envelope bytes and 10,000 envelope rows; reaching either is full. Of these, 5,242,880 bytes and 1,000 rows are reserved for cryptographically verified classes 2–4. Class 1 and every locked, unknown-route, or not-yet-authenticated object share the 47,185,920-byte/9,000-row general limit, regardless of claimed header class. After successful outer and MLS/COSE authentication, an unlocked endpoint atomically marks the object verified and may account it to the control reserve. Verified control traffic may use unused general capacity.
+
+`traffic_class` is authenticated by the outer container only for a recipient with the key; it is untrusted quota input before then. An opaque courier can therefore preserve a claimed seven-day control TTL but cannot consume reserved control rows/bytes. Attackers can still spend valid proof of work to occupy general capacity for the claimed TTL; this bounded availability risk is explicit and no relay guesses whether an unknown route is legitimate.
 
 For each Noise session and direction, accept at most 256 newly offered envelope IDs and 1,048,576 total envelope bytes, whichever is reached first. Duplicates count toward offered IDs and bytes so they cannot bypass work limits. For a connection that has not completed an authenticated MLS/COSE operation, additionally accept at most 64 new envelopes and 262,144 bytes in any 60-second session. The session closes at 60 seconds regardless of progress. Maximum concurrent sessions are four on mobile and sixteen on desktop; excess peers receive only a generic busy close.
 
@@ -191,8 +196,8 @@ Eviction occurs before rejecting an otherwise admissible envelope:
 
 1. delete monotonic-expired entries;
 2. delete structurally invalid rows found by integrity scan;
-3. for class 1 admission, evict oldest class 1 rows until both general limits fit;
-4. for classes 2–4, evict oldest class 1 rows, then oldest control rows if required.
+3. for general admission, evict oldest general rows until both general limits fit;
+4. for verified-control admission, evict oldest general rows, then oldest verified-control rows if required.
 
 “Oldest” is ascending local first-seen monotonic sequence, then lexicographic envelope ID. No sender timestamp influences eviction order. If the incoming object alone exceeds its applicable limit, reject it. Quota accounting uses complete stored envelope bytes, not declared plaintext size or filesystem allocation.
 
@@ -204,15 +209,19 @@ After the handshake, each encrypted transport message contains one four-byte len
 
 | Kind | Name | Payload and limit |
 |---:|---|---|
-| 1 | `HELLO` | `{0: session_id bstr16, 1: max_envelope=4096, 2: max_offer=256}` |
+| 1 | `HELLO` | `{0: session_id bstr16, 1: node_run_id bstr16, 2: max_envelope=4096, 3: max_offer=256}`; both IDs nonzero |
 | 2 | `INVENTORY` | array of 1–256 envelope IDs, sorted, unique |
 | 3 | `REQUEST` | array of 1–256 envelope IDs, sorted, unique subset of inventory |
 | 4 | `PUSH` | array of 1–15 complete envelope byte strings totaling at most 61,440 bytes |
-| 5 | `CUSTODY_ACK` | array of 1–256 `[envelope_id, status]`; status 0 stored, 1 identical duplicate |
+| 5 | `CUSTODY_ACK` | array of 1–256 `[envelope_id, status]`; status 0 stored, 1 canonical duplicate including a valid mutable-only variant |
 | 6 | `GOODBYE` | reason 0 complete, 1 quota, 2 timeout, 3 superseded |
 | 7 | `ERROR` | generic reason 0 protocol or 1 busy; immediately close |
 
-Each side sends exactly one HELLO first. Inventories contain only envelopes the sender is willing to forward and MUST be chunked across records. A receiver requests only absent IDs, PUSHes only requested IDs, and acknowledges only after durable relay/private commit. Receipt of an unrequested envelope, out-of-order first message, limit violation, or second HELLO is a generic protocol close. A session ends on bilateral GOODBYE, error, disconnect, quota, or 60-second timeout. Resume starts a new Noise session and inventory; no unauthenticated resume token exists.
+Each side sends exactly one HELLO first. `session_id` is fresh per Noise session; `node_run_id` is the process value from `ARCHITECTURE.md`. Inventories contain only unexpired envelopes with positive stored hops, ordered by local first-seen monotonic sequence then envelope ID, and MUST be chunked across records. V1 performs no route negotiation: this bounded inventory selection is identical whether or not the peer knows any route. A receiver requests only absent IDs, PUSHes only requested IDs, and acknowledges only after durable relay/private commit. Receipt of an unrequested envelope, out-of-order first message, limit violation, or second HELLO is a generic protocol close.
+
+After both HELLOs, concurrent sessions with the same remote `node_run_id` and transport class are superseded deterministically. For each session compute `pair_id = min(local_session_id, remote_session_id) || max(local_session_id, remote_session_id)` using unsigned lexicographic order. Both endpoints keep the session with the lexicographically smallest pair ID and send GOODBYE reason 3 on every loser; equal pair IDs on distinct connections close both as protocol errors. BLE and WLAN are separate transport classes and do not supersede one another. This rule is an availability/deduplication rule, not identity authentication.
+
+A session ends on bilateral GOODBYE, supersession, error, disconnect, quota, or 60-second timeout. Resume starts a new Noise session and full inventory; no resume token, state snapshot, MLS repair record, or routing-tag-list record exists.
 
 ## 7. BLE link
 
@@ -241,13 +250,13 @@ Payload length MUST equal characteristic-value length minus 8 and MUST be no gre
 
 ## 8. WLAN link
 
-Each process start creates a random 128-bit lowercase-hex mDNS instance name. It advertises service `_meshmsg._tcp.local.`, TTL 120 seconds, on a randomly selected available TCP port in 49152–65535, with the sole TXT pair `v=1`. Hostnames and OS network metadata can still leak outside the application. The app advertises no display name, identity, contact, or stable instance value.
+The mDNS instance name is the lowercase hexadecimal `node_run_id` created at process start. It advertises service `_meshmsg._tcp.local.`, TTL 120 seconds, on a randomly selected available TCP port in 49152–65535, with the sole TXT pair `v=1`. Hostnames and OS network metadata can still leak outside the application. The app advertises no display name, identity, contact, or value stable across process runs.
 
 The listener accepts at most the platform session concurrency limit. TCP connects enter Noise immediately. The first Noise handshake byte must arrive within five seconds; the complete handshake must finish within ten seconds; otherwise close. Each Noise handshake/transport ciphertext is framed outside Noise with a four-byte big-endian length capped at 65,535. The encrypted sync length prefix described in section 6 remains inside the transport ciphertext. TCP keepalive is not a liveness guarantee; all reads/writes obey the 60-second session deadline.
 
 ## 9. LoRa fragmentation and Meshtastic
 
-Only complete envelopes of 256, 512, 1,024, or 1,536 bytes are eligible. Fragment count is `ceil(total_length / 160)` and therefore 2, 4, 7, or 10. Each `PRIVATE_APP` payload is exactly 180 bytes:
+Only complete envelopes of 256, 512, 1,024, or 1,536 bytes are eligible. Fragment count is `ceil(total_length / 160)` and therefore exactly 2, 4, 7, or 10; every other count is rejected before allocation. The count uniquely fixes total length and meaningful final-fragment bytes as `{2: (256, 96), 4: (512, 32), 7: (1,024, 64), 10: (1,536, 96)}`. Each `PRIVATE_APP` payload is exactly 180 bytes:
 
 | Offset | Size | Field |
 |---:|---:|---|
@@ -255,14 +264,14 @@ Only complete envelopes of 256, 512, 1,024, or 1,536 bytes are eligible. Fragmen
 | 1 | 1 | flags zero |
 | 2 | 16 | envelope ID copied from header |
 | 18 | 1 | zero-based fragment index |
-| 19 | 1 | fragment count 1–10 |
+| 19 | 1 | fragment count exactly 2, 4, 7, or 10 |
 | 20 | 160 | consecutive envelope bytes; final unused bytes are fresh random padding |
 
-All fragments MUST use identical ID/count and unique indices. Reassembly concatenates indices, parses the inner envelope's authenticated `total_length`, requires the count to equal `ceil(total_length/160)`, trims only bytes after `total_length`, and requires the frame ID to equal the envelope header ID. Conflicting bytes for one ID/index discard the entire assembly and suppress that ID for the remainder of the ten-minute fragment deadline. Duplicate identical fragments are ignored.
+All fragments MUST use identical ID/count and unique indices. For a non-final index all 160 data bytes are meaningful. For the final index only the mapped prefix length above is meaningful; its remaining random tail is ignored for duplicate/conflict comparison and never enters the reassembled envelope. Thus independently fragmenting gateways may use different final padding without conflict. Reassembly concatenates meaningful prefixes, structurally parses the inner envelope `total_length`, requires it to equal the count mapping, and requires the frame ID to equal the envelope header ID before ordinary envelope admission authenticates that header. Conflicting meaningful bytes for one ID/index discard the entire assembly and suppress that ID for the remainder of the ten-minute fragment deadline. Duplicates with equal meaningful bytes are ignored even if final padding differs.
 
 Fragment storage is capped globally at 128 assemblies and 2,097,152 bytes. An assembly expires 600 monotonic seconds after its first fragment and is never extended. On pressure, evict earliest deadline then lexicographic ID. Fragment bytes are never forwarded or stored in the relay database until the complete envelope passes admission.
 
-The adapter sends each fragment with Meshtastic port 256 and `want_ack=true`. Attempt 1 is immediate; if no successful Meshtastic Routing acknowledgement, attempts 2 and 3 become eligible 15 and 45 seconds after the preceding attempt, with zero application jitter in v1. The firmware may delay/refuse transmission for duty cycle. Stop on success, terminal radio error, envelope expiry, or five minutes after the first attempt. The next fragment starts only after success or exhausted attempts. The entire envelope is `accepted_by_mesh` only after every fragment has a successful Routing acknowledgement. This is hop/radio acceptance, never end-to-end delivery.
+The fragmenter caches the exact 180-byte frame set for one gateway/envelope before the first send; all retries by that gateway reuse those byte-identical frames. The adapter sends each fragment with Meshtastic port 256 and `want_ack=true`. Attempt 1 is immediate; if no successful Meshtastic Routing acknowledgement, attempts 2 and 3 become eligible 15 and 45 seconds after the preceding attempt, with zero application jitter in v1. The firmware may delay/refuse transmission for duty cycle. Stop on success, terminal radio error, envelope expiry, or five minutes after the first attempt. The next fragment starts only after success or exhausted attempts. The entire envelope is `accepted_by_mesh` only after every fragment has a successful Routing acknowledgement. This is hop/radio acceptance, never end-to-end delivery.
 
 ## 10. Delivery state machine
 
@@ -279,6 +288,6 @@ For groups, `delivered` is unreachable; UI displays `queued`, `accepted_by_mesh`
 
 ## 11. Errors and observability
 
-Local typed codes are `MALFORMED`, `UNSUPPORTED_VERSION`, `DUPLICATE`, `ID_COLLISION`, `EXPIRED`, `FUTURE_TIME`, `POW_INVALID`, `AUTH_FAILED`, `POLICY_REJECT`, `QUOTA`, `BUSY`, `TIMEOUT`, `RADIO_REFUSED`, and `STORAGE_FAILED`. They MUST carry no offending bytes, IDs, addresses, cryptographic details, or plaintext.
+Local typed codes are `MALFORMED`, `UNSUPPORTED_VERSION`, `DUPLICATE`, `ID_COLLISION`, `EXPIRED`, `FUTURE_TIME`, `POW_INVALID`, `AUTH_FAILED`, `POLICY_REJECT`, `REPAIR_REQUIRED`, `QUOTA`, `BUSY`, `TIMEOUT`, `RADIO_REFUSED`, and `STORAGE_FAILED`. They MUST carry no offending bytes, IDs, addresses, cryptographic details, or plaintext.
 
 Before Noise, errors are silent connection close. Inside Noise, only generic sync `ERROR` protocol/busy is sent; cryptographic, route, quota-detail, and parser reasons are not exposed. Meshtastic malformed frames are silently dropped. Unsupported v1 values never trigger downgrade. Logs aggregate error-code counts in coarse ten-minute buckets and MUST NOT correlate them with a peer, route, envelope, or conversation.

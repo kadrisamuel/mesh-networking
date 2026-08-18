@@ -30,6 +30,77 @@ const LABELS = {
   storage_wrap_aad: "mesh-messenger/v1/linux-storage-wrap",
 };
 
+const OPENMLS_COMMIT = "47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6";
+const OPENMLS_WELCOME_FILE_SHA256 = "06be9d5c99817ef2545e4b15b8e73fd9b604685a8e55b59ca168eda98e236502";
+const OPENMLS_KEY_SCHEDULE_FILE_SHA256 = "05aa9a68bd2538ace72d8c53375984cc728ef62220ebf314df675708546d97a7";
+const OPENMLS_KEY_PACKAGE = Buffer.from(
+  "00010005000100012028b2cd6417984dc4708c61a1cce7c0f11d181bd36d6f7a" +
+  "610ea21cb96f79ba6020275d9e6337b11a5e21ba755f2353053a500103efa1c5a" +
+  "c7c07d3a78f8817ad2d203de79c7e370156ce25a88d897a8ea7c8f90fea1f71f" +
+  "beb5f31855312d8750007000120b640fbb0df8e646b29c83c5ed08aea89f72ab1" +
+  "08922827ea76cd3b917d6d99420200010c00010002000300040005000600000400" +
+  "010002010000000000000000ffffffffffffffff004040fd81837a40a9ba774bb4" +
+  "4db665081f4d0ff2a8f680ce5c902b17acc4ae6d9a14b9d4e9b4f8e7d74af8ff" +
+  "42032ec9caadf267e85931b550eebbe480150d4b9b0a0040401ec696ab731d5a7" +
+  "b1092b0db9912fe35086e188ce2946996bdf3cec463849f1a32f653b6e246b8b8" +
+  "5a486ce3f604891501052c3d7bbee2155fff6a367e5a1f03",
+  "hex",
+);
+const OPENMLS_WELCOME = Buffer.from(
+  "0001000300014076208e1faada70f08b91ef7f7f79ed1da917d9ce3cea5e5ce22" +
+  "e4a8b10f4311559dd20a87de170e9dc54bd4a8a48f38cd5c949f0cc82fce8ea7" +
+  "2232417975ec6bad95033f6701d639694cbb51a4b2d0191f432add5267eea7b33f" +
+  "3c0c7edc65a28650adb0008f08b84a420bf1070516cb079a8e5c4159a40e80bee" +
+  "12b78b86d125155b035f52e8a131469cf1b9645d70e270d3aa21c04945fa80b7f" +
+  "ea30ccfceb436e4df23558cdc1a6cd435db3199314795b7c488b4bf0855cb589a" +
+  "d9c7eb43ea8bc9edef6b85ad1c97451b706e5de27aabe664dca132a288b3fc091" +
+  "b9100e470fb506833aaa4ab279a44c92c21e34dd295b6e49978d8c93cf20537be" +
+  "bc1a467177500d7fe6b127d5b3d13bf038cd2e8ec00937db6fd4996b2f2e416b" +
+  "810d0822b77bd71b59bf1e486c1ad74da0de9872f839b63928a03ae11e4dfacb" +
+  "7cf27ea2c35ae233d9c63fe901ddd4e7be7e643912bb39ad8a728792753bc8314" +
+  "317388e",
+  "hex",
+);
+const OPENMLS_EXPORTER_SECRET = Buffer.from("5a097e149f2a375d0b9e1d1f4dc3a9c6c1788df888e5441f41a8791f4dc56cea", "hex");
+const OPENMLS_GROUP_ID = Buffer.from("a897b53575b4dd35fed4466e4e714bfa949eaa72e616a9c68a47b39cb7a60d2e", "hex");
+const OPENMLS_GROUP_CONTEXT = Buffer.from(
+  "0001000120a897b53575b4dd35fed4466e4e714bfa949eaa72e616a9c68a47b39" +
+  "cb7a60d2e0000000000000000209769e302a99c457350a8e636009b12a2fee068" +
+  "664004606d6318eb3a1977d818205e57c9364dc71f0f71b19ffe561ab77257c49" +
+  "0708a47e29f8f73f2b318201d2f00",
+  "hex",
+);
+const OPENMLS_EXPORTER_KAT_LABEL = "9ba13d54ecdec7cbefcb47b4268d7b1990fabc6d6e67681e167959389d84e4e4";
+const OPENMLS_EXPORTER_KAT_CONTEXT = Buffer.from("884f1af892ab002f5be4c5d5081ade9e0e6418c6ea7a9a92e90534f19dcef785", "hex");
+const OPENMLS_EXPORTER_KAT_SECRET = Buffer.from("dbce4e25e59ab4dfa6f6200f113ed08393cf6e7286d024811141c6a4dd11c0cb", "hex");
+const NOISE_PROTOCOL_NAME = Buffer.from("Noise_NN_25519_ChaChaPoly_SHA256", "ascii");
+const NOISE_INITIATOR_PRIVATE = Buffer.from("ba743ce40b65ad7ec0700dc2e57de4791022a8f42cd46517c6689c5c812b3b36", "hex");
+const NOISE_RESPONDER_PRIVATE = Buffer.from("d5cb9c3d9df2b6263f292f59099680ab2b523cf02b43a4c534b1fa94f9a80ed8", "hex");
+const SNOW_COMMIT = "4bb43f50370bdb3e8b1b57814ac662864db2704f";
+const SNOW_VECTOR_FILE_SHA256 = "69da433305fd045f6c9f01b656662a389d022688986fd39fbe7af009cd402fd3";
+const SNOW_VECTOR_PROLOGUE = Buffer.from(
+  "5468657265206973206e6f20726967687420616e642077726f6e672e2054686572" +
+  "652773206f6e6c792066756e20616e6420626f72696e672e",
+  "hex",
+);
+const SNOW_VECTOR_PAYLOADS = [
+  "d369dc8436b80ad2936b4179ef262a0d174c06e3d452de5f22a7ca0326baaac7",
+  "87f4ce9acdcfe73e88f0d2b7e8b6009f07c5a42b3412909c1b7ce407a763ebd1",
+  "bdc326451b8af9b6b82a2054643878d9eeaea4845c6b1e9ba616b2723c2ef272",
+  "a783aa12cefa403d1dff9d6ac924f860a15d1ba21c2c4976f8fa88d76e590fef",
+].map((value) => Buffer.from(value, "hex"));
+const SNOW_VECTOR_CIPHERTEXTS = [
+  "479a148ee78e18278f7716338574086a12bf8d90cc54c6c88ae6a4275dbd1478" +
+    "d369dc8436b80ad2936b4179ef262a0d174c06e3d452de5f22a7ca0326baaac7",
+  "5f1bc611a449717c2fc7c33a0f3976beae914c336d2a761c2f6e1ee2ab721f7c" +
+    "166608582f25b34bf5ebe478049971b64e5982d8b546b1cfa58fae828b7c8137" +
+    "562fdec5808f41fadeeee43013019277",
+  "15f337bd32ddb96a17765a9499a4eb24b757d59c78d5366fdd56a2eab7eed11a" +
+    "0b6d4ed2947c0bf83d9d625ab90ee60b",
+  "6b676682c308c230a602d1997ff9e94b815dbc497346a4144fc4290021a2dbfc" +
+    "bee618798a8eb5042562a637927d4e98",
+].map((value) => Buffer.from(value, "hex"));
+
 const utf8 = (value) => Buffer.from(value, "utf8");
 const hx = (value) => Buffer.from(value).toString("hex");
 const sha256 = (value) => createHash("sha256").update(value).digest();
@@ -49,6 +120,93 @@ function hkdfExpand(prk, info, length) {
     counter += 1;
   }
   return output.subarray(0, length);
+}
+
+function mlsVlBytes(value) {
+  if (value.length < 64) return Buffer.concat([Buffer.from([value.length]), value]);
+  if (value.length < 16_384) return Buffer.concat([u16(0x4000 | value.length), value]);
+  if (value.length < 2 ** 30) return Buffer.concat([u32(0x80000000 + value.length), value]);
+  throw new Error("MLS variable-length vector too large");
+}
+
+function mlsExpandWithLabel(secret, label, context, length) {
+  const kdfLabel = Buffer.concat([
+    u16(length),
+    mlsVlBytes(Buffer.concat([utf8("MLS 1.0 "), utf8(label)])),
+    mlsVlBytes(context),
+  ]);
+  return hkdfExpand(secret, kdfLabel, length);
+}
+
+function mlsExport(exporterSecret, label, context, length) {
+  const derived = mlsExpandWithLabel(exporterSecret, label, Buffer.alloc(0), 32);
+  return mlsExpandWithLabel(derived, "exported", sha256(context), length);
+}
+
+function noiseHkdf(chainingKey, inputKeyMaterial) {
+  const tempKey = hmacSha256(chainingKey, inputKeyMaterial);
+  const output1 = hmacSha256(tempKey, Buffer.from([1]));
+  const output2 = hmacSha256(tempKey, Buffer.concat([output1, Buffer.from([2])]));
+  return [output1, output2];
+}
+
+function noiseNonce(counter) {
+  const nonce = Buffer.alloc(12);
+  nonce.writeBigUInt64LE(BigInt(counter), 4);
+  return nonce;
+}
+
+function noiseEncrypt(key, counter, aad, plaintext) {
+  const cipher = createCipheriv("chacha20-poly1305", key, noiseNonce(counter), { authTagLength: 16 });
+  cipher.setAAD(aad, { plaintextLength: plaintext.length });
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return Buffer.concat([ciphertext, cipher.getAuthTag()]);
+}
+
+function noiseNn(
+  initiatorPlaintext,
+  responderPlaintext,
+  {
+    prologue = utf8(LABELS.noise_prologue),
+    initiatorHandshakePayload = Buffer.alloc(0),
+    responderHandshakePayload = Buffer.alloc(0),
+  } = {},
+) {
+  if (NOISE_PROTOCOL_NAME.length !== 32) throw new Error("unexpected Noise protocol-name length");
+  const initiatorPublic = xPublic(NOISE_INITIATOR_PRIVATE);
+  const responderPublic = xPublic(NOISE_RESPONDER_PRIVATE);
+  let chainingKey = NOISE_PROTOCOL_NAME;
+  let handshakeHash = NOISE_PROTOCOL_NAME;
+  handshakeHash = sha256(Buffer.concat([handshakeHash, prologue]));
+
+  handshakeHash = sha256(Buffer.concat([handshakeHash, initiatorPublic]));
+  handshakeHash = sha256(Buffer.concat([handshakeHash, initiatorHandshakePayload]));
+  const message1 = Buffer.concat([initiatorPublic, initiatorHandshakePayload]);
+
+  handshakeHash = sha256(Buffer.concat([handshakeHash, responderPublic]));
+  const shared = diffieHellman({
+    privateKey: xPrivate(NOISE_RESPONDER_PRIVATE),
+    publicKey: xPublicKey(initiatorPublic),
+  });
+  let handshakeKey;
+  [chainingKey, handshakeKey] = noiseHkdf(chainingKey, shared);
+  const encryptedPayload = noiseEncrypt(handshakeKey, 0, handshakeHash, responderHandshakePayload);
+  handshakeHash = sha256(Buffer.concat([handshakeHash, encryptedPayload]));
+  const message2 = Buffer.concat([responderPublic, encryptedPayload]);
+
+  const [initiatorSendKey, initiatorReceiveKey] = noiseHkdf(chainingKey, Buffer.alloc(0));
+  return {
+    initiator_public: initiatorPublic,
+    responder_public: responderPublic,
+    ee_shared_secret: shared,
+    message1,
+    message2,
+    handshake_hash: handshakeHash,
+    initiator_send_key: initiatorSendKey,
+    initiator_receive_key: initiatorReceiveKey,
+    initiator_ciphertext: noiseEncrypt(initiatorSendKey, 0, Buffer.alloc(0), initiatorPlaintext),
+    responder_ciphertext: noiseEncrypt(initiatorReceiveKey, 0, Buffer.alloc(0), responderPlaintext),
+  };
 }
 
 function u16(value) {
@@ -213,9 +371,9 @@ function powHeader(value) {
   return out;
 }
 
-function findPow(baseHeader, sealed) {
+function findPow(baseHeader, sealed, start = 0) {
   const prefix = utf8(LABELS.pow);
-  for (let counter = 0; counter < Number.MAX_SAFE_INTEGER; counter += 1) {
+  for (let counter = start; counter < Number.MAX_SAFE_INTEGER; counter += 1) {
     const candidate = Buffer.from(baseHeader);
     u64(counter).copy(candidate, 68);
     const digest = sha256(Buffer.concat([prefix, powHeader(candidate), sealed]));
@@ -286,32 +444,64 @@ function buildVectors() {
   const hpkeRecipientSeed = Buffer.from(Array.from({ length: 32 }, (_, index) => 0xa0 + index));
   const hpkeRecipientPub = xPublic(hpkeRecipientSeed);
   const rendezvous = Buffer.from(Array.from({ length: 32 }, (_, index) => 0x70 + index));
-  const opaqueKeyPackage = Buffer.from("000100080001000102030405", "hex");
+  const upstreamKeyPackage = OPENMLS_KEY_PACKAGE;
   const contactPayload = cbor(new Map([
     [0, 1], [1, bundleId], [2, issued], [3, issued + 10_080], [4, rootPubA],
-    [5, certCose], [6, opaqueKeyPackage], [7, hpkeRecipientPub], [8, rendezvous],
+    [5, certCose], [6, upstreamKeyPackage], [7, hpkeRecipientPub], [8, rendezvous],
   ]));
   const contactCose = coseSign1(contactPayload, deviceSeed, utf8(LABELS.contact_bundle_aad));
   const qr = `meshmsg:v1:${contactCose.toString("base64url")}`;
 
   const invitationId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xe0 + index));
-  const opaqueWelcome = Buffer.from("0001000c101112131415161718191a1b", "hex");
+  const upstreamWelcome = OPENMLS_WELCOME;
   const bootstrapPayload = cbor(new Map([
-    [0, 1], [1, bundleId], [2, opaqueWelcome], [3, mlsCredential], [4, 1], [5, null], [6, invitationId],
+    [0, 1], [1, bundleId], [2, upstreamWelcome], [3, mlsCredential], [4, 1], [5, null], [6, invitationId],
   ]));
   const bootstrapCose = coseSign1(bootstrapPayload, deviceSeed, utf8(LABELS.bootstrap_record_aad));
 
   const appEventId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0x10 + index));
   const appCbor = cbor(new Map([[0, 1], [1, 1], [2, appEventId], [3, 1], [4, "mesh test"]]));
-  const sessionId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xd0 + index));
-  const syncCbor = cbor(new Map([[0, 1], [1, 1], [2, new Map([[0, sessionId], [1, 4096], [2, 256]])]]));
+  const initiatorSessionId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xd0 + index));
+  const initiatorNodeRunId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xe0 + index));
+  const responderSessionId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xc0 + index));
+  const responderNodeRunId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xf0 + index));
+  const syncCbor = cbor(new Map([
+    [0, 1], [1, 1],
+    [2, new Map([[0, initiatorSessionId], [1, initiatorNodeRunId], [2, 4096], [3, 256]])],
+  ]));
+  const responderSyncCbor = cbor(new Map([
+    [0, 1], [1, 1],
+    [2, new Map([[0, responderSessionId], [1, responderNodeRunId], [2, 4096], [3, 256]])],
+  ]));
   const syncPlaintext = Buffer.concat([u32(syncCbor.length), syncCbor]);
-  const bleChunk = Buffer.concat([Buffer.from([1, 3]), u16(0x1234), u16(0), u16(syncPlaintext.length), syncPlaintext]);
-  const dummyNoiseCiphertext = Buffer.from("dec001000102030405060708090a0b0c", "hex");
-  const wlanFrame = Buffer.concat([u32(dummyNoiseCiphertext.length), dummyNoiseCiphertext]);
+  const responderSyncPlaintext = Buffer.concat([u32(responderSyncCbor.length), responderSyncCbor]);
+  const noise = noiseNn(syncPlaintext, responderSyncPlaintext);
+  const snowKat = noiseNn(SNOW_VECTOR_PAYLOADS[2], SNOW_VECTOR_PAYLOADS[3], {
+    prologue: SNOW_VECTOR_PROLOGUE,
+    initiatorHandshakePayload: SNOW_VECTOR_PAYLOADS[0],
+    responderHandshakePayload: SNOW_VECTOR_PAYLOADS[1],
+  });
+  const snowActual = [snowKat.message1, snowKat.message2, snowKat.initiator_ciphertext, snowKat.responder_ciphertext];
+  if (!snowActual.every((value, index) => value.equals(SNOW_VECTOR_CIPHERTEXTS[index]))) {
+    throw new Error("snow Noise NN vector mismatch");
+  }
+  const bleChunk = Buffer.concat([
+    Buffer.from([1, 3]), u16(0x1234), u16(0), u16(noise.initiator_ciphertext.length),
+    noise.initiator_ciphertext,
+  ]);
+  const wlanFrame = Buffer.concat([u32(noise.initiator_ciphertext.length), noise.initiator_ciphertext]);
 
-  const routingSecret = Buffer.from(Array.from({ length: 32 }, (_, index) => index));
-  const outerKey = Buffer.from(Array.from({ length: 16 }, (_, index) => 0x90 + index));
+  const katExportedSecret = mlsExport(
+    OPENMLS_EXPORTER_SECRET,
+    OPENMLS_EXPORTER_KAT_LABEL,
+    OPENMLS_EXPORTER_KAT_CONTEXT,
+    32,
+  );
+  if (!katExportedSecret.equals(OPENMLS_EXPORTER_KAT_SECRET)) {
+    throw new Error("OpenMLS exporter KAT mismatch");
+  }
+  const routingSecret = mlsExport(OPENMLS_EXPORTER_SECRET, LABELS.routing_exporter, Buffer.alloc(0), 32);
+  const outerKey = mlsExport(OPENMLS_EXPORTER_SECRET, LABELS.outer_exporter, Buffer.alloc(0), 16);
   const createdUser = 30_000_120;
   const slotUser = Math.floor(createdUser / 360);
   const routeTag = hmacSha256(routingSecret, Buffer.concat([utf8(LABELS.routing_tag), u64(slotUser)])).subarray(0, 16);
@@ -327,6 +517,16 @@ function buildVectors() {
   const userSealed = aesGcm(outerKey, userNonce, userPlain, normalizedHeader(userBaseHeader));
   const userProof = findPow(userBaseHeader, userSealed);
   const userEnvelope = Buffer.concat([userProof.header, userSealed]);
+  const alternateProof = findPow(userBaseHeader, userSealed, userProof.counter + 1);
+  const alternateHeader = Buffer.from(alternateProof.header);
+  alternateHeader[65] = 7;
+  const alternateEnvelope = Buffer.concat([alternateHeader, userSealed]);
+  const duplicateContentDigest = sha256(Buffer.concat([normalizedHeader(userProof.header), userSealed]));
+  const conflictSealed = Buffer.from(userSealed);
+  conflictSealed[conflictSealed.length - 1] ^= 1;
+  const conflictProof = findPow(userBaseHeader, conflictSealed);
+  const conflictEnvelope = Buffer.concat([conflictProof.header, conflictSealed]);
+  const conflictContentDigest = sha256(Buffer.concat([normalizedHeader(conflictProof.header), conflictSealed]));
 
   const fragmentCount = Math.ceil(userEnvelope.length / 160);
   const loraFrames = [];
@@ -335,6 +535,9 @@ function buildVectors() {
     fragment = Buffer.concat([fragment, Buffer.alloc(160 - fragment.length, 0xa5)]);
     loraFrames.push(Buffer.concat([Buffer.from([1, 0]), userId, Buffer.from([index, fragmentCount]), fragment]));
   }
+  const finalMeaningful = new Map([[2, 96], [4, 32], [7, 64], [10, 96]]).get(fragmentCount);
+  const alternateFinalFrame = Buffer.from(loraFrames.at(-1));
+  alternateFinalFrame.fill(0x5a, 20 + finalMeaningful);
 
   const createdBootstrap = 30_000_240;
   const slotBootstrap = Math.floor(createdBootstrap / 360);
@@ -387,7 +590,9 @@ function buildVectors() {
       event_id_hex: hx(appEventId), text: "mesh test", text_record_hex: hx(appCbor),
     },
     ble_and_wlan: {
-      ble_link_chunk_hex: hx(bleChunk), sync_hello_cbor_hex: hx(syncCbor),
+      ble_link_chunk_hex: hx(bleChunk), initiator_noise_transport_ciphertext_hex: hx(noise.initiator_ciphertext),
+      responder_sync_hello_cbor_hex: hx(responderSyncCbor),
+      responder_sync_plaintext_frame_hex: hx(responderSyncPlaintext), sync_hello_cbor_hex: hx(syncCbor),
       sync_plaintext_frame_hex: hx(syncPlaintext), wlan_noise_frame_hex: hx(wlanFrame),
     },
     bootstrap_envelope: {
@@ -404,8 +609,20 @@ function buildVectors() {
       bootstrap_cose_hex: hx(bootstrapCose), bootstrap_payload_hex: hx(bootstrapPayload),
       contact_cose_hex: hx(contactCose), contact_payload_hex: hx(contactPayload),
       device_certificate_cose_hex: hx(certCose), device_certificate_payload_hex: hx(certPayload),
-      mls_credential_cbor_hex: hx(mlsCredential), opaque_key_package_tls_hex: hx(opaqueKeyPackage),
-      opaque_welcome_tls_hex: hx(opaqueWelcome), qr_text: qr,
+      mls_credential_cbor_hex: hx(mlsCredential),
+      application_binding_expected: "POLICY_REJECT_UPSTREAM_OBJECT_NOT_APPLICATION_BOUND",
+      upstream_key_package_tls_hex: hx(upstreamKeyPackage),
+      upstream_welcome_tls_hex: hx(upstreamWelcome), qr_text: qr,
+    },
+    duplicate_merge: {
+      alternate_envelope_hex: hx(alternateEnvelope), alternate_hops_remaining: alternateHeader[65],
+      alternate_pow_digest_hex: hx(alternateProof.digest), alternate_pow_nonce: alternateProof.counter,
+      conflict_content_sha256: hx(conflictContentDigest), conflict_envelope_hex: hx(conflictEnvelope),
+      conflict_expected: "QUARANTINE_ID_COLLISION", conflict_pow_digest_hex: hx(conflictProof.digest),
+      conflict_pow_nonce: conflictProof.counter,
+      duplicate_content_sha256: hx(duplicateContentDigest), merge_expected_hops_remaining: 8,
+      merge_expected_pow_nonce: Math.min(userProof.counter, alternateProof.counter),
+      original_envelope_hex: hx(userEnvelope),
     },
     identity: {
       bip39_checksum_byte_hex: checksum.toString(16).padStart(2, "0"), bip39_indices: indices,
@@ -422,12 +639,38 @@ function buildVectors() {
       scrypt_p: 1, scrypt_r: 8, wrap_key_hex: hx(wrapKey),
     },
     lora: {
+      alternate_final_frame_hex: hx(alternateFinalFrame),
+      alternate_final_frame_sha256: hx(sha256(alternateFinalFrame)),
+      final_meaningful_bytes: finalMeaningful,
       fragment_count: fragmentCount, frames_hex: loraFrames.map(hx), frames_sha256: loraFrames.map((frame) => hx(sha256(frame))),
     },
     meta: {
       cbor_profile: "RFC8949-deterministic",
-      note: "Opaque MLS bytes exercise application framing only; RFC/OpenMLS KATs validate MLS internals.",
+      note: "Test-only private values; valid pinned OpenMLS objects and exporter input remain subject to the recorded application-binding rejection.",
       schema: "mesh-messenger-vectors/1", spec_version: "1.0.0-draft.1",
+    },
+    noise_nn: {
+      ee_shared_secret_hex: hx(noise.ee_shared_secret), handshake_hash_hex: hx(noise.handshake_hash),
+      initiator_private_hex: hx(NOISE_INITIATOR_PRIVATE), initiator_public_hex: hx(noise.initiator_public),
+      initiator_receive_key_hex: hx(noise.initiator_receive_key), initiator_send_key_hex: hx(noise.initiator_send_key),
+      initiator_transport_ciphertext_hex: hx(noise.initiator_ciphertext), message1_hex: hx(noise.message1),
+      message2_hex: hx(noise.message2), prologue_utf8_hex: hx(utf8(LABELS.noise_prologue)),
+      protocol_name: NOISE_PROTOCOL_NAME.toString("ascii"), responder_private_hex: hx(NOISE_RESPONDER_PRIVATE),
+      responder_public_hex: hx(noise.responder_public), responder_transport_ciphertext_hex: hx(noise.responder_ciphertext),
+      snow_source_commit: SNOW_COMMIT, snow_source_file: "tests/vectors/snow.txt",
+      snow_source_file_sha256: SNOW_VECTOR_FILE_SHA256,
+      snow_source_vector_ciphertexts_sha256: hx(sha256(Buffer.concat(SNOW_VECTOR_CIPHERTEXTS))),
+    },
+    openmls_upstream: {
+      application_outer_key_hex: hx(outerKey), application_routing_secret_hex: hx(routingSecret),
+      cipher_suite: 1, exporter_kat_context_hex: hx(OPENMLS_EXPORTER_KAT_CONTEXT),
+      exporter_kat_expected_secret_hex: hx(OPENMLS_EXPORTER_KAT_SECRET),
+      exporter_kat_label_utf8: OPENMLS_EXPORTER_KAT_LABEL, exporter_secret_hex: hx(OPENMLS_EXPORTER_SECRET),
+      group_context_hex: hx(OPENMLS_GROUP_CONTEXT), group_id_hex: hx(OPENMLS_GROUP_ID),
+      key_package_sha256: hx(sha256(OPENMLS_KEY_PACKAGE)), key_schedule_file_sha256: OPENMLS_KEY_SCHEDULE_FILE_SHA256,
+      source_commit: OPENMLS_COMMIT, source_key_schedule_case: 0, source_welcome_case: 0,
+      valid_key_package_tls_hex: hx(OPENMLS_KEY_PACKAGE), valid_welcome_tls_hex: hx(OPENMLS_WELCOME),
+      welcome_file_sha256: OPENMLS_WELCOME_FILE_SHA256, welcome_sha256: hx(sha256(OPENMLS_WELCOME)),
     },
     routing_and_user_envelope: {
       aad_normalized_header_hex: hx(normalizedHeader(userProof.header)), envelope_hex: hx(userEnvelope),

@@ -34,8 +34,8 @@ RF transmit tests are disabled until the signed compliance record names the coun
 ## Sources
 
 - [GNU Affero General Public License v3](https://www.gnu.org/licenses/agpl-3.0.html)
-- [Meshtastic firmware license](https://github.com/meshtastic/firmware/blob/master/LICENSE)
-- [Meshtastic protobufs license](https://github.com/meshtastic/protobufs/blob/master/LICENSE)
+- [Meshtastic firmware license at the pinned commit](https://github.com/meshtastic/firmware/blob/54e0d8d0ab2ff56b3a9ce967e53f79e49af560fb/LICENSE)
+- [Meshtastic protobufs license at the pinned commit](https://github.com/meshtastic/protobufs/blob/da60cee584c6dc1efbb4a3809b98666505179b85/LICENSE)
 - [Apple upcoming submission requirements](https://developer.apple.com/news/upcoming-requirements/)
 - [EU Commission Implementing Decision (EU) 2025/105](https://eur-lex.europa.eu/eli/dec_impl/2025/105/oj/eng)
 
