@@ -1,0 +1,12 @@
+# Draft architecture decision records
+
+These records are DEC-001 draft decisions. They are normative for review, but none is approved and no implementation may rely on them until every row in [DECISION_RECORD.md](DECISION_RECORD.md) has a human `Approved` outcome.
+
+| ADR | Subject | Status |
+|---|---|---|
+| [ADR-0001](0001-platform-and-architecture-baseline.md) | Platforms, ownership, dependencies, and hardware | Draft — human approval required |
+| [ADR-0002](0002-identity-cryptography-and-recovery.md) | Identity, MLS, recovery, and storage | Draft — security review and human approval required |
+| [ADR-0003](0003-envelope-relay-and-transport.md) | Envelope, relay, BLE/WLAN, and LoRa | Draft — security, RF, and human approval required |
+| [ADR-0004](0004-distribution-and-compliance-gates.md) | Licensing, signing, stores, and distribution | Draft — qualified legal and human approval required |
+
+The five files in `docs/spec/` and the versioned fixtures in `docs/spec/vectors/v1/` are part of these decisions. If prose conflicts, the exact constants and byte layouts in the v1 specifications govern after approval.
