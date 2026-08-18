@@ -9,7 +9,7 @@ This record is not signed. DEC-001 remains blocked and all specifications remain
 | ADR-0003 | Product owner, independent security reviewer, and RF-qualified reviewer | Name, date, source revision, vector digest, RF scope, approve/reject | Not reviewed |
 | ADR-0004 | Product owner, qualified legal reviewer, release owner, and RF-qualified reviewer | Names, dates, source revision, scoped written determinations, approve/reject | Not reviewed |
 | Five normative specifications | Product owner and engineering lead | Names, date, source revision, specification version, approve/reject | Not reviewed |
-| v1 golden vectors | Independent reproducer using `gpt-5.6-sol` at xhigh plus human security reviewer | Both generator commands, byte-identical digest, security-choice checklist, human acceptance | **FAIL** for draft.1 at commit `f00c53d3ff263602937150b4339dd79a230ec4d3`: byte reproduction succeeded, but final independent review found eight unresolved defects. Draft.2 regeneration/review and human acceptance are pending. |
+| v1 golden vectors | Independent reproducer using `gpt-5.6-sol` at xhigh plus human security reviewer | Both generator commands, byte-identical digest, security-choice checklist, human acceptance | **FAIL** for draft.1 at commit `f00c53d3ff263602937150b4339dd79a230ec4d3`. Draft.2 has a locally byte-identical candidate digest `df345ab74cf40e6508c82171a77de3b213838ed6d4a3794b93d0af085fb277ab`, but no new independent or human review result. |
 
 ## Failed independent technical review — supersedes prior PASS claim
 

@@ -11,12 +11,13 @@ import {
   sign,
   scryptSync,
 } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const LABELS = {
   bootstrap_record_aad: "mesh-messenger/v1/bootstrap-record",
   bootstrap_routing_tag: "mesh-messenger/v1/bootstrap-routing-tag",
   contact_bundle_aad: "mesh-messenger/v1/contact-bundle",
+  database_wrap_aad: "mesh-messenger/v1/database-key-wrap",
   device_certificate_aad: "mesh-messenger/v1/device-certificate",
   hpke_info: "mesh-messenger/v1/bootstrap-hpke",
   identity_id: "mesh-messenger/v1/identity-id",
@@ -29,6 +30,9 @@ const LABELS = {
   safety_number: "mesh-messenger/v1/safety-number",
   storage_wrap_aad: "mesh-messenger/v1/linux-storage-wrap",
 };
+
+const APPLICATION_FIXTURE_URL = new URL("./openmls_16_member_measurement.json", import.meta.url);
+const APPLICATION_FIXTURE_SHA256 = "1015e46e7423a57bc00e12c0c7008c648cb468a3df0b41cea77c3ad585395b7f";
 
 const OPENMLS_COMMIT = "47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6";
 const OPENMLS_WELCOME_FILE_SHA256 = "06be9d5c99817ef2545e4b15b8e73fd9b604685a8e55b59ca168eda98e236502";
@@ -395,7 +399,7 @@ function makeInner(kind, content, totalPlaintext, padStart) {
 }
 
 function smallestClass(required) {
-  for (const size of [256, 512, 1024, 1536, 2048, 3072, 4096]) {
+  for (const size of [256, 512, 1024, 1536, 2048, 3072, 4096, 8192]) {
     if (required <= size) return size;
   }
   throw new Error("envelope too large");
@@ -411,11 +415,21 @@ function uuidV5(name) {
 }
 
 function buildVectors() {
-  const entropyA = Buffer.alloc(32);
-  const entropyB = Buffer.alloc(32, 0xff);
+  const fixtureBytes = readFileSync(APPLICATION_FIXTURE_URL);
+  if (hx(sha256(fixtureBytes)) !== APPLICATION_FIXTURE_SHA256) {
+    throw new Error("application-bound OpenMLS fixture digest mismatch");
+  }
+  const applicationFixture = JSON.parse(fixtureBytes.toString("utf8"));
+  if (applicationFixture.openmls_revision !== OPENMLS_COMMIT) {
+    throw new Error("application-bound OpenMLS revision mismatch");
+  }
+
+  const zeroEntropy = Buffer.alloc(32);
+  const entropyA = Buffer.alloc(32, 0xff);
+  const entropyB = Buffer.from(Array.from({ length: 32 }, (_, index) => index));
   const checksum = sha256(entropyA)[0];
-  const indices = [...Array(23).fill(0), checksum];
-  const phrase = [...Array(23).fill("abandon"), "art"].join(" ");
+  const indices = [...Array(23).fill(2047), (7 << 8) | checksum];
+  const phrase = [...Array(23).fill("zoo"), "vote"].join(" ");
 
   const rootPrkA = hkdfExtract(Buffer.alloc(0), entropyA);
   const rootSeedA = hkdfExpand(rootPrkA, utf8(LABELS.root_seed), 32);
@@ -430,52 +444,151 @@ function buildVectors() {
   const safetyDigits = (BigInt(`0x${safetyDigest.toString("hex")}`) % (10n ** 60n)).toString().padStart(60, "0");
   const safetyDisplay = Array.from({ length: 12 }, (_, index) => safetyDigits.slice(index * 5, index * 5 + 5)).join(" ");
 
-  const issued = 30_000_000;
-  const deviceSeed = Buffer.from(Array.from({ length: 32 }, (_, index) => 0x20 + index));
-  const devicePub = edPublic(deviceSeed);
-  const deviceId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0x40 + index));
-  const certPayload = cbor(new Map([
-    [0, 1], [1, identityA], [2, deviceId], [3, devicePub], [4, issued], [5, null], [6, 1],
-  ]));
-  const certCose = coseSign1(certPayload, rootSeedA, utf8(LABELS.device_certificate_aad));
-  const mlsCredential = cbor(new Map([[0, 1], [1, rootPubA], [2, certCose]]));
+  const issued = applicationFixture.issued_minute;
+
+  function fixtureIdentity(role) {
+    const record = applicationFixture.application_binding[role];
+    const rootSeed = Buffer.from(record.root_seed_public_test_only_hex, "hex");
+    const deviceSeed = Buffer.from(record.device_seed_public_test_only_hex, "hex");
+    const rootPublic = edPublic(rootSeed);
+    const devicePublic = edPublic(deviceSeed);
+    const identityId = sha256(Buffer.concat([utf8(LABELS.identity_id), rootPublic])).subarray(0, 16);
+    if (hx(rootPublic) !== record.root_public_hex || hx(devicePublic) !== record.device_public_hex) {
+      throw new Error(`${role} fixture public-key mismatch`);
+    }
+    if (hx(identityId) !== record.identity_id_hex) throw new Error(`${role} fixture identity mismatch`);
+    const certificatePayload = cbor(new Map([
+      [0, 1],
+      [1, identityId],
+      [2, Buffer.from(record.device_instance_id_hex, "hex")],
+      [3, devicePublic],
+      [4, issued],
+      [5, null],
+      [6, 1],
+    ]));
+    const certificate = coseSign1(certificatePayload, rootSeed, utf8(LABELS.device_certificate_aad));
+    const credential = cbor(new Map([[0, 1], [1, rootPublic], [2, certificate]]));
+    if (hx(credential) !== record.credential_cbor_hex) {
+      throw new Error(`${role} fixture credential mismatch`);
+    }
+    return {
+      rootSeed,
+      rootPublic,
+      identityId,
+      deviceSeed,
+      devicePublic,
+      deviceId: Buffer.from(record.device_instance_id_hex, "hex"),
+      certificatePayload,
+      certificate,
+      credential,
+    };
+  }
+
+  const owner = fixtureIdentity("owner");
+  const recipient = fixtureIdentity("recipient");
+  const outsider = fixtureIdentity("outsider");
+  const deviceSeed = owner.deviceSeed;
+  const devicePub = owner.devicePublic;
+  const deviceId = owner.deviceId;
+  const certPayload = owner.certificatePayload;
+  const certCose = owner.certificate;
+  const mlsCredential = owner.credential;
 
   const bundleId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xb0 + index));
   const hpkeRecipientSeed = Buffer.from(Array.from({ length: 32 }, (_, index) => 0xa0 + index));
   const hpkeRecipientPub = xPublic(hpkeRecipientSeed);
   const rendezvous = Buffer.from(Array.from({ length: 32 }, (_, index) => 0x70 + index));
-  const upstreamKeyPackage = OPENMLS_KEY_PACKAGE;
+  const applicationKeyPackage = Buffer.from(applicationFixture.recipient_key_package_tls.hex, "hex");
+  if (applicationKeyPackage.length !== 474) throw new Error("application KeyPackage length mismatch");
   const contactPayload = cbor(new Map([
-    [0, 1], [1, bundleId], [2, issued], [3, issued + 10_080], [4, rootPubA],
-    [5, certCose], [6, upstreamKeyPackage], [7, hpkeRecipientPub], [8, rendezvous],
+    [0, 1], [1, bundleId], [2, issued], [3, issued + 10_080], [4, recipient.rootPublic],
+    [5, recipient.certificate], [6, applicationKeyPackage], [7, hpkeRecipientPub], [8, rendezvous],
   ]));
-  const contactCose = coseSign1(contactPayload, deviceSeed, utf8(LABELS.contact_bundle_aad));
+  const contactCose = coseSign1(contactPayload, recipient.deviceSeed, utf8(LABELS.contact_bundle_aad));
   const qr = `meshmsg:v1:${contactCose.toString("base64url")}`;
 
   const invitationId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xe0 + index));
-  const upstreamWelcome = OPENMLS_WELCOME;
+  const applicationWelcome = Buffer.from(applicationFixture.welcome_mls_message_tls.hex, "hex");
+  if (applicationWelcome.length !== 6622) throw new Error("application Welcome length mismatch");
   const bootstrapPayload = cbor(new Map([
-    [0, 1], [1, bundleId], [2, upstreamWelcome], [3, mlsCredential], [4, 1], [5, null], [6, invitationId],
+    [0, 1], [1, bundleId], [2, applicationWelcome], [3, mlsCredential], [4, 2], [5, owner.identityId], [6, invitationId],
   ]));
   const bootstrapCose = coseSign1(bootstrapPayload, deviceSeed, utf8(LABELS.bootstrap_record_aad));
+  if (bootstrapCose.length !== 6962) throw new Error("measured bootstrap COSE length mismatch");
+
+  const wrongKeyPackagePayload = cbor(new Map([
+    [0, 1],
+    [1, Buffer.from(Array.from({ length: 16 }, (_, index) => 0x90 + index))],
+    [2, issued],
+    [3, issued + 10_080],
+    [4, owner.rootPublic],
+    [5, owner.certificate],
+    [6, applicationKeyPackage],
+    [7, hpkeRecipientPub],
+    [8, rendezvous],
+  ]));
+  const wrongKeyPackageCose = coseSign1(
+    wrongKeyPackagePayload,
+    owner.deviceSeed,
+    utf8(LABELS.contact_bundle_aad),
+  );
+  if (owner.credential.equals(recipient.credential)) {
+    throw new Error("negative KeyPackage credential unexpectedly matched");
+  }
+
+  const outsiderBundleId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0x80 + index));
+  const outsiderKeyPackage = Buffer.from(
+    applicationFixture.negative_application_binding.wrong_welcome_recipient_key_package_tls.hex,
+    "hex",
+  );
+  const wrongWelcomePayload = cbor(new Map([
+    [0, 1],
+    [1, outsiderBundleId],
+    [2, applicationWelcome],
+    [3, owner.credential],
+    [4, 2],
+    [5, owner.identityId],
+    [6, Buffer.from(Array.from({ length: 16 }, (_, index) => 0x60 + index))],
+  ]));
+  const wrongWelcomeCose = coseSign1(
+    wrongWelcomePayload,
+    owner.deviceSeed,
+    utf8(LABELS.bootstrap_record_aad),
+  );
 
   const appEventId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0x10 + index));
-  const appCbor = cbor(new Map([[0, 1], [1, 1], [2, appEventId], [3, 1], [4, "mesh test"]]));
+  const receiptEventId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0x20 + index));
+  const replacementEventId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0x30 + index));
+  const applicationRecords = {
+    text: cbor(new Map([[0, 1], [1, 1], [2, appEventId], [3, 1], [4, "mesh test"]])),
+    delivery_receipt: cbor(new Map([
+      [0, 1], [1, 2], [2, receiptEventId], [3, 2], [4, new Map([[0, appEventId]])],
+    ])),
+    device_replacement_notice: cbor(new Map([
+      [0, 1], [1, 3], [2, replacementEventId], [3, 3], [4, owner.certificate],
+    ])),
+  };
   const initiatorSessionId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xd0 + index));
   const initiatorNodeRunId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xe0 + index));
   const responderSessionId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xc0 + index));
   const responderNodeRunId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xf0 + index));
-  const syncCbor = cbor(new Map([
-    [0, 1], [1, 1],
-    [2, new Map([[0, initiatorSessionId], [1, initiatorNodeRunId], [2, 4096], [3, 256]])],
-  ]));
+  const syncRecord = (kind, payload) => cbor(new Map([[0, 1], [1, kind], [2, payload]]));
+  const syncCbor = syncRecord(
+    1,
+    new Map([
+      [0, initiatorSessionId], [1, initiatorNodeRunId], [2, 8192], [3, 256],
+    ]),
+  );
   const responderSyncCbor = cbor(new Map([
     [0, 1], [1, 1],
-    [2, new Map([[0, responderSessionId], [1, responderNodeRunId], [2, 4096], [3, 256]])],
+    [2, new Map([[0, responderSessionId], [1, responderNodeRunId], [2, 8192], [3, 256]])],
   ]));
   const syncPlaintext = Buffer.concat([u32(syncCbor.length), syncCbor]);
   const responderSyncPlaintext = Buffer.concat([u32(responderSyncCbor.length), responderSyncCbor]);
   const noise = noiseNn(syncPlaintext, responderSyncPlaintext);
+  if (noise.message1.length !== 32 || noise.message2.length !== 48) {
+    throw new Error("Noise NN empty-payload handshake length mismatch");
+  }
   const snowKat = noiseNn(SNOW_VECTOR_PAYLOADS[2], SNOW_VECTOR_PAYLOADS[3], {
     prologue: SNOW_VECTOR_PROLOGUE,
     initiatorHandshakePayload: SNOW_VECTOR_PAYLOADS[0],
@@ -490,6 +603,14 @@ function buildVectors() {
     noise.initiator_ciphertext,
   ]);
   const wlanFrame = Buffer.concat([u32(noise.initiator_ciphertext.length), noise.initiator_ciphertext]);
+  const bleHandshakeMessage1 = Buffer.concat([
+    Buffer.from([1, 3]), u16(0x1200), u16(0), u16(32), noise.message1,
+  ]);
+  const bleHandshakeMessage2 = Buffer.concat([
+    Buffer.from([1, 3]), u16(0x1201), u16(0), u16(48), noise.message2,
+  ]);
+  const wlanHandshakeMessage1 = Buffer.concat([u32(32), noise.message1]);
+  const wlanHandshakeMessage2 = Buffer.concat([u32(48), noise.message2]);
 
   const katExportedSecret = mlsExport(
     OPENMLS_EXPORTER_SECRET,
@@ -500,20 +621,44 @@ function buildVectors() {
   if (!katExportedSecret.equals(OPENMLS_EXPORTER_KAT_SECRET)) {
     throw new Error("OpenMLS exporter KAT mismatch");
   }
-  const routingSecret = mlsExport(OPENMLS_EXPORTER_SECRET, LABELS.routing_exporter, Buffer.alloc(0), 32);
-  const outerKey = mlsExport(OPENMLS_EXPORTER_SECRET, LABELS.outer_exporter, Buffer.alloc(0), 16);
-  const createdUser = 30_000_120;
+  const upstreamRoutingSecret = mlsExport(
+    OPENMLS_EXPORTER_SECRET,
+    LABELS.routing_exporter,
+    Buffer.alloc(0),
+    32,
+  );
+  const upstreamSenderOuterKeys = Array.from({ length: 16 }, (_, leaf) => ({
+    sender_leaf_index: leaf,
+    context_hex: hx(u32(leaf)),
+    outer_key_hex: hx(mlsExport(OPENMLS_EXPORTER_SECRET, LABELS.outer_exporter, u32(leaf), 16)),
+  }));
+  const applicationExporters = applicationFixture.application_exporters;
+  const routingSecret = Buffer.from(applicationExporters.routing_secret_hex, "hex");
+  const senderOuterKeys = applicationExporters.sender_outer_keys;
+  if (senderOuterKeys.length !== 16 || new Set(senderOuterKeys.map((entry) => entry.outer_key_hex)).size !== 16) {
+    throw new Error("application sender outer-key coverage mismatch");
+  }
+  senderOuterKeys.forEach((entry, leaf) => {
+    if (entry.sender_leaf_index !== leaf || entry.context_hex !== hx(u32(leaf))) {
+      throw new Error("application sender outer-key context mismatch");
+    }
+  });
+  const outerKey = Buffer.from(senderOuterKeys[0].outer_key_hex, "hex");
+  const createdUser = issued + 120;
   const slotUser = Math.floor(createdUser / 360);
   const routeTag = hmacSha256(routingSecret, Buffer.concat([utf8(LABELS.routing_tag), u64(slotUser)])).subarray(0, 16);
   const userId = Buffer.from("00112233445566778899aabbccddeeff", "hex");
   const userNonce = Buffer.from("0102030405060708090a0b0c", "hex");
-  const userTotal = 256;
+  const applicationMls = Buffer.from(applicationFixture.application_message.mls_message_tls.hex, "hex");
+  if (applicationFixture.application_message.authenticated_sender_leaf_index !== 0) {
+    throw new Error("application MLS sender fixture mismatch");
+  }
+  const userTotal = smallestClass(80 + 16 + 4 + applicationMls.length);
   const userBaseHeader = makeHeader({
     mode: 1, trafficClass: 1, totalLength: userTotal, envelopeId: userId, routingTag: routeTag,
     created: createdUser, expires: createdUser + 1_440, nonce: userNonce,
   });
-  const fakeMls = Buffer.from("0001deadbeef", "hex");
-  const userPlain = makeInner(1, fakeMls, userTotal - 80 - 16, 0x40);
+  const userPlain = makeInner(1, applicationMls, userTotal - 80 - 16, 0x40);
   const userSealed = aesGcm(outerKey, userNonce, userPlain, normalizedHeader(userBaseHeader));
   const userProof = findPow(userBaseHeader, userSealed);
   const userEnvelope = Buffer.concat([userProof.header, userSealed]);
@@ -528,18 +673,59 @@ function buildVectors() {
   const conflictEnvelope = Buffer.concat([conflictProof.header, conflictSealed]);
   const conflictContentDigest = sha256(Buffer.concat([normalizedHeader(conflictProof.header), conflictSealed]));
 
-  const fragmentCount = Math.ceil(userEnvelope.length / 160);
-  const loraFrames = [];
-  for (let index = 0; index < fragmentCount; index += 1) {
-    let fragment = userEnvelope.subarray(index * 160, (index + 1) * 160);
-    fragment = Buffer.concat([fragment, Buffer.alloc(160 - fragment.length, 0xa5)]);
-    loraFrames.push(Buffer.concat([Buffer.from([1, 0]), userId, Buffer.from([index, fragmentCount]), fragment]));
+  function fragmentVector(envelope) {
+    const envelopeId = envelope.subarray(12, 28);
+    const fragmentCount = Math.ceil(envelope.length / 160);
+    const finalMeaningful = new Map([[2, 96], [4, 32], [7, 64], [10, 96]]).get(fragmentCount);
+    const frames = [];
+    for (let index = 0; index < fragmentCount; index += 1) {
+      let fragment = envelope.subarray(index * 160, (index + 1) * 160);
+      fragment = Buffer.concat([fragment, Buffer.alloc(160 - fragment.length, 0xa5)]);
+      frames.push(Buffer.concat([
+        Buffer.from([1, 0]), envelopeId, Buffer.from([index, fragmentCount]), fragment,
+      ]));
+    }
+    const alternateFinal = Buffer.from(frames.at(-1));
+    alternateFinal.fill(0x5a, 20 + finalMeaningful);
+    return {
+      alternate_final_frame_hex: hx(alternateFinal),
+      alternate_final_frame_sha256: hx(sha256(alternateFinal)),
+      envelope_hex: hx(envelope),
+      envelope_sha256: hx(sha256(envelope)),
+      final_meaningful_bytes: finalMeaningful,
+      fragment_count: fragmentCount,
+      frames_hex: frames.map(hx),
+      frames_sha256: frames.map((frame) => hx(sha256(frame))),
+    };
   }
-  const finalMeaningful = new Map([[2, 96], [4, 32], [7, 64], [10, 96]]).get(fragmentCount);
-  const alternateFinalFrame = Buffer.from(loraFrames.at(-1));
-  alternateFinalFrame.fill(0x5a, 20 + finalMeaningful);
 
-  const createdBootstrap = 30_000_240;
+  const loraEnvelopes = new Map([[userTotal, userEnvelope]]);
+  [256, 512, 1024, 1536].forEach((mappingSize, mappingIndex) => {
+    if (loraEnvelopes.has(mappingSize)) return;
+    const mappingId = Buffer.alloc(16, 0x50 + mappingIndex);
+    const mappingNonce = Buffer.alloc(12, 0x60 + mappingIndex);
+    const mappingHeader = makeHeader({
+      mode: 1,
+      trafficClass: 1,
+      totalLength: mappingSize,
+      envelopeId: mappingId,
+      routingTag: routeTag,
+      created: createdUser,
+      expires: createdUser + 1_440,
+      nonce: mappingNonce,
+    });
+    const mappingMls = mappingSize >= 512 ? applicationMls : Buffer.from("0001deadbeef", "hex");
+    const mappingPlain = makeInner(1, mappingMls, mappingSize - 80 - 16, 0x50 + mappingIndex);
+    const mappingSealed = aesGcm(outerKey, mappingNonce, mappingPlain, normalizedHeader(mappingHeader));
+    const mappingProof = findPow(mappingHeader, mappingSealed);
+    loraEnvelopes.set(mappingSize, Buffer.concat([mappingProof.header, mappingSealed]));
+  });
+  const loraMappings = Object.fromEntries(
+    [256, 512, 1024, 1536].map((size) => [`size_${size}`, fragmentVector(loraEnvelopes.get(size))]),
+  );
+  loraMappings.size_256.transport_only_inner_mls_stub = true;
+
+  const createdBootstrap = issued + 240;
   const slotBootstrap = Math.floor(createdBootstrap / 360);
   const bootstrapTag = hmacSha256(
     rendezvous,
@@ -547,6 +733,9 @@ function buildVectors() {
   ).subarray(0, 16);
   const requiredBootstrap = 80 + 32 + 16 + 4 + bootstrapCose.length;
   const bootstrapTotal = smallestClass(requiredBootstrap);
+  if (requiredBootstrap !== 7094 || bootstrapTotal !== 8192) {
+    throw new Error("measured bootstrap envelope limit mismatch");
+  }
   const bootstrapId = Buffer.from("ffeeddccbbaa99887766554433221100", "hex");
   const bootstrapBaseHeader = makeHeader({
     mode: 2, trafficClass: 2, totalLength: bootstrapTotal, envelopeId: bootstrapId, routingTag: bootstrapTag,
@@ -559,6 +748,29 @@ function buildVectors() {
   const bootstrapSealed = Buffer.concat([hpke.enc, hpkeCiphertext]);
   const bootstrapProof = findPow(bootstrapBaseHeader, bootstrapSealed);
   const bootstrapEnvelope = Buffer.concat([bootstrapProof.header, bootstrapSealed]);
+
+  const inventoryIds = [userId, bootstrapId].sort(Buffer.compare);
+  const syncVariantBytes = {
+    hello_initiator: syncCbor,
+    hello_responder: responderSyncCbor,
+    inventory: syncRecord(2, inventoryIds),
+    request: syncRecord(3, [userId]),
+    push: syncRecord(4, [userEnvelope, bootstrapEnvelope]),
+    custody_ack_both_statuses: syncRecord(5, [[userId, 0], [bootstrapId, 1]]),
+    ...Object.fromEntries(Array.from({ length: 4 }, (_, reason) => [
+      `goodbye_reason_${reason}`, syncRecord(6, reason),
+    ])),
+    ...Object.fromEntries(Array.from({ length: 2 }, (_, reason) => [
+      `error_reason_${reason}`, syncRecord(7, reason),
+    ])),
+  };
+  const syncVariants = Object.fromEntries(Object.entries(syncVariantBytes).map(([name, record]) => [
+    name,
+    {
+      cbor_hex: hx(record),
+      plaintext_frame_hex: hx(Buffer.concat([u32(record.length), record])),
+    },
+  ]));
 
   const storagePassphrase = "correct horse battery staple".normalize("NFKC");
   const storageSalt = Buffer.from(Array.from({ length: 16 }, (_, index) => index));
@@ -578,6 +790,24 @@ function buildVectors() {
   );
   const storageRecord = Buffer.concat([storageHeader, storageWrapped]);
 
+  const platformDatabaseId = Buffer.from(Array.from({ length: 16 }, (_, index) => index + 1));
+  const androidWrappingKey = Buffer.from(Array.from({ length: 32 }, (_, index) => 0x40 + index));
+  const androidNonce = Buffer.from(Array.from({ length: 12 }, (_, index) => 0xe0 + index));
+  const androidHeader = Buffer.concat([
+    utf8("MDA1"), Buffer.from([1, 1]), Buffer.alloc(2), platformDatabaseId, androidNonce, u16(48),
+  ]);
+  const androidAad = Buffer.concat([utf8(LABELS.database_wrap_aad), androidHeader]);
+  const androidWrapped = aesGcm(androidWrappingKey, androidNonce, databaseKey, androidAad);
+  const androidRecord = Buffer.concat([androidHeader, androidWrapped]);
+  if (androidRecord.length !== 86) throw new Error("Android wrapping record length mismatch");
+
+  const windowsEntropy = sha256(Buffer.concat([utf8(LABELS.database_wrap_aad), platformDatabaseId]));
+  const syntheticDpapiBlob = pattern(64, 0x33);
+  const windowsRecord = Buffer.concat([
+    utf8("MDW1"), Buffer.from([1, 2]), Buffer.alloc(2), platformDatabaseId,
+    u32(syntheticDpapiBlob.length), syntheticDpapiBlob,
+  ]);
+
   const uuidInputs = {
     service: "https://mesh-messenger.invalid/ble/service/v1",
     write: "https://mesh-messenger.invalid/ble/write/v1",
@@ -587,13 +817,23 @@ function buildVectors() {
 
   return {
     application_cbor: {
-      event_id_hex: hx(appEventId), text: "mesh test", text_record_hex: hx(appCbor),
+      device_replacement_notice_event_id_hex: hx(replacementEventId),
+      delivery_receipt_event_id_hex: hx(receiptEventId),
+      records_hex: Object.fromEntries(
+        Object.entries(applicationRecords).map(([name, record]) => [name, hx(record)]),
+      ),
+      text_event_id_hex: hx(appEventId),
     },
     ble_and_wlan: {
+      ble_handshake_message1_chunk_hex: hx(bleHandshakeMessage1),
+      ble_handshake_message2_chunk_hex: hx(bleHandshakeMessage2),
       ble_link_chunk_hex: hx(bleChunk), initiator_noise_transport_ciphertext_hex: hx(noise.initiator_ciphertext),
       responder_sync_hello_cbor_hex: hx(responderSyncCbor),
       responder_sync_plaintext_frame_hex: hx(responderSyncPlaintext), sync_hello_cbor_hex: hx(syncCbor),
-      sync_plaintext_frame_hex: hx(syncPlaintext), wlan_noise_frame_hex: hx(wlanFrame),
+      sync_plaintext_frame_hex: hx(syncPlaintext), sync_variants: syncVariants,
+      wlan_handshake_message1_frame_hex: hx(wlanHandshakeMessage1),
+      wlan_handshake_message2_frame_hex: hx(wlanHandshakeMessage2),
+      wlan_noise_frame_hex: hx(wlanFrame),
     },
     bootstrap_envelope: {
       aad_normalized_header_hex: hx(normalizedHeader(bootstrapProof.header)),
@@ -603,16 +843,33 @@ function buildVectors() {
       pow_digest_hex: hx(bootstrapProof.digest), pow_nonce: bootstrapProof.counter,
       recipient_private_hex: hx(hpkeRecipientSeed), recipient_public_hex: hx(hpkeRecipientPub),
       routing_tag_hex: hx(bootstrapTag), shared_secret_hex: hx(hpke.shared_secret),
-      slot: slotBootstrap, total_length: bootstrapTotal,
+      slot: slotBootstrap, bootstrap_cose_length: bootstrapCose.length,
+      minimum_unpadded_length: requiredBootstrap, total_length: bootstrapTotal,
     },
     canonical_objects: {
       bootstrap_cose_hex: hx(bootstrapCose), bootstrap_payload_hex: hx(bootstrapPayload),
       contact_cose_hex: hx(contactCose), contact_payload_hex: hx(contactPayload),
       device_certificate_cose_hex: hx(certCose), device_certificate_payload_hex: hx(certPayload),
       mls_credential_cbor_hex: hx(mlsCredential),
-      application_binding_expected: "POLICY_REJECT_UPSTREAM_OBJECT_NOT_APPLICATION_BOUND",
-      upstream_key_package_tls_hex: hx(upstreamKeyPackage),
-      upstream_welcome_tls_hex: hx(upstreamWelcome), qr_text: qr,
+      positive_application_binding_expected: "ACCEPT",
+      positive_key_package_tls_hex: hx(applicationKeyPackage),
+      positive_welcome_tls_hex: hx(applicationWelcome),
+      positive_member_count: applicationFixture.member_count,
+      positive_join_validation: applicationFixture.join_validation,
+      negative_key_package_contact_cose_hex: hx(wrongKeyPackageCose),
+      negative_key_package_contact_payload_hex: hx(wrongKeyPackagePayload),
+      negative_key_package_expected: applicationFixture.negative_application_binding.expected_key_package_result,
+      negative_key_package_expected_credential_hex: hx(owner.credential),
+      negative_key_package_actual_credential_hex: hx(recipient.credential),
+      negative_welcome_bootstrap_cose_hex: hx(wrongWelcomeCose),
+      negative_welcome_bootstrap_payload_hex: hx(wrongWelcomePayload),
+      negative_welcome_outsider_credential_hex: hx(outsider.credential),
+      negative_welcome_outsider_key_package_tls_hex: hx(outsiderKeyPackage),
+      negative_welcome_expected: applicationFixture.negative_application_binding.expected_welcome_result,
+      negative_welcome_openmls_error: applicationFixture.negative_application_binding.wrong_welcome_recipient_openmls_error,
+      upstream_application_binding_expected: "POLICY_REJECT_UPSTREAM_OBJECT_NOT_APPLICATION_BOUND",
+      upstream_key_package_tls_hex: hx(OPENMLS_KEY_PACKAGE),
+      upstream_welcome_tls_hex: hx(OPENMLS_WELCOME), qr_text: qr,
     },
     duplicate_merge: {
       alternate_envelope_hex: hx(alternateEnvelope), alternate_hops_remaining: alternateHeader[65],
@@ -628,6 +885,8 @@ function buildVectors() {
       bip39_checksum_byte_hex: checksum.toString(16).padStart(2, "0"), bip39_indices: indices,
       bip39_phrase: phrase, device_instance_id_hex: hx(deviceId), device_public_hex: hx(devicePub),
       device_seed_hex: hx(deviceSeed), entropy_a_hex: hx(entropyA), entropy_b_hex: hx(entropyB),
+      positive_entropy_nonzero: true, zero_entropy_hex: hx(zeroEntropy),
+      zero_entropy_expected: "RETRY_THEN_FAIL_AFTER_EIGHT_ALL_ZERO_DRAWS",
       identity_a_hex: hx(identityA), identity_b_hex: hx(identityB), root_prk_a_hex: hx(rootPrkA),
       root_public_a_hex: hx(rootPubA), root_public_b_hex: hx(rootPubB), root_seed_a_hex: hx(rootSeedA),
       root_seed_b_hex: hx(rootSeedB), safety_digest_hex: hx(safetyDigest), safety_display: safetyDisplay,
@@ -638,23 +897,67 @@ function buildVectors() {
       record_hex: hx(storageRecord), salt_hex: hx(storageSalt), scrypt_N: 131_072,
       scrypt_p: 1, scrypt_r: 8, wrap_key_hex: hx(wrapKey),
     },
+    platform_storage_wrap: {
+      database_id_hex: hx(platformDatabaseId),
+      android: {
+        aad_hex: hx(androidAad),
+        alias: `mesh-messenger-v1-db-${hx(platformDatabaseId)}`,
+        nonce_hex: hx(androidNonce),
+        record_hex: hx(androidRecord),
+        record_length: androidRecord.length,
+        wrapping_key_public_test_only_hex: hx(androidWrappingKey),
+      },
+      ios: {
+        access_control_flags: [],
+        access_group: "application-default",
+        accessibility: "kSecAttrAccessibleWhenUnlockedThisDeviceOnly",
+        account: hx(platformDatabaseId),
+        data_hex: hx(databaseKey),
+        service: "mesh-messenger/v1/database-key",
+        synchronizable: false,
+        use_data_protection_keychain: false,
+      },
+      macos: {
+        access_control_flags: [],
+        access_group: "application-default",
+        accessibility: "kSecAttrAccessibleWhenUnlockedThisDeviceOnly",
+        account: hx(platformDatabaseId),
+        data_hex: hx(databaseKey),
+        service: "mesh-messenger/v1/database-key",
+        synchronizable: false,
+        use_data_protection_keychain: true,
+      },
+      ubuntu_secret_service: {
+        attributes: { application: "mesh-messenger-v1", "database-id": hx(platformDatabaseId) },
+        collection: "default",
+        content_type: "application/octet-stream",
+        secret_hex: hx(databaseKey),
+      },
+      windows: {
+        description: "mesh-messenger-v1",
+        dpapi_blob_hex: hx(syntheticDpapiBlob),
+        dpapi_blob_is_synthetic_opaque_test_data: true,
+        flags: ["CRYPTPROTECT_UI_FORBIDDEN"],
+        optional_entropy_hex: hx(windowsEntropy),
+        record_hex: hx(windowsRecord),
+      },
+    },
     lora: {
-      alternate_final_frame_hex: hx(alternateFinalFrame),
-      alternate_final_frame_sha256: hx(sha256(alternateFinalFrame)),
-      final_meaningful_bytes: finalMeaningful,
-      fragment_count: fragmentCount, frames_hex: loraFrames.map(hx), frames_sha256: loraFrames.map((frame) => hx(sha256(frame))),
+      mappings: loraMappings,
     },
     meta: {
       cbor_profile: "RFC8949-deterministic",
-      note: "Test-only private values; valid pinned OpenMLS objects and exporter input remain subject to the recorded application-binding rejection.",
-      schema: "mesh-messenger-vectors/1", spec_version: "1.0.0-draft.1",
+      note: "All private values are public test-only fixtures and must never be used in production; draft.2 awaits independent and human review.",
+      schema: "mesh-messenger-vectors/1", spec_version: "1.0.0-draft.2",
     },
     noise_nn: {
       ee_shared_secret_hex: hx(noise.ee_shared_secret), handshake_hash_hex: hx(noise.handshake_hash),
       initiator_private_hex: hx(NOISE_INITIATOR_PRIVATE), initiator_public_hex: hx(noise.initiator_public),
       initiator_receive_key_hex: hx(noise.initiator_receive_key), initiator_send_key_hex: hx(noise.initiator_send_key),
       initiator_transport_ciphertext_hex: hx(noise.initiator_ciphertext), message1_hex: hx(noise.message1),
-      message2_hex: hx(noise.message2), prologue_utf8_hex: hx(utf8(LABELS.noise_prologue)),
+      message1_length: noise.message1.length, message1_payload_hex: "",
+      message2_hex: hx(noise.message2), message2_length: noise.message2.length,
+      message2_payload_hex: "", prologue_utf8_hex: hx(utf8(LABELS.noise_prologue)),
       protocol_name: NOISE_PROTOCOL_NAME.toString("ascii"), responder_private_hex: hx(NOISE_RESPONDER_PRIVATE),
       responder_public_hex: hx(noise.responder_public), responder_transport_ciphertext_hex: hx(noise.responder_ciphertext),
       snow_source_commit: SNOW_COMMIT, snow_source_file: "tests/vectors/snow.txt",
@@ -662,7 +965,10 @@ function buildVectors() {
       snow_source_vector_ciphertexts_sha256: hx(sha256(Buffer.concat(SNOW_VECTOR_CIPHERTEXTS))),
     },
     openmls_upstream: {
-      application_outer_key_hex: hx(outerKey), application_routing_secret_hex: hx(routingSecret),
+      application_fixture_sha256: APPLICATION_FIXTURE_SHA256,
+      application_fixture_source: "openmls_16_member_measurement.json",
+      application_routing_secret_hex: hx(routingSecret),
+      application_sender_outer_keys: senderOuterKeys,
       cipher_suite: 1, exporter_kat_context_hex: hx(OPENMLS_EXPORTER_KAT_CONTEXT),
       exporter_kat_expected_secret_hex: hx(OPENMLS_EXPORTER_KAT_SECRET),
       exporter_kat_label_utf8: OPENMLS_EXPORTER_KAT_LABEL, exporter_secret_hex: hx(OPENMLS_EXPORTER_SECRET),
@@ -671,13 +977,18 @@ function buildVectors() {
       source_commit: OPENMLS_COMMIT, source_key_schedule_case: 0, source_welcome_case: 0,
       valid_key_package_tls_hex: hx(OPENMLS_KEY_PACKAGE), valid_welcome_tls_hex: hx(OPENMLS_WELCOME),
       welcome_file_sha256: OPENMLS_WELCOME_FILE_SHA256, welcome_sha256: hx(sha256(OPENMLS_WELCOME)),
+      upstream_application_routing_secret_hex: hx(upstreamRoutingSecret),
+      upstream_application_sender_outer_keys: upstreamSenderOuterKeys,
     },
     routing_and_user_envelope: {
       aad_normalized_header_hex: hx(normalizedHeader(userProof.header)), envelope_hex: hx(userEnvelope),
       envelope_sha256: hx(sha256(userEnvelope)), nonce_hex: hx(userNonce), outer_key_hex: hx(outerKey),
       plaintext_hex: hx(userPlain), pow_digest_hex: hx(userProof.digest), pow_nonce: userProof.counter,
       routing_secret_fixture_hex: hx(routingSecret), routing_tag_hex: hx(routeTag),
-      sealed_body_hex: hx(userSealed), slot: slotUser, total_length: userTotal,
+      sealed_body_hex: hx(userSealed), slot: slotUser,
+      selected_sender_context_hex: "00000000", selected_sender_leaf_index: 0,
+      authenticated_mls_sender_leaf_index: applicationFixture.application_message.authenticated_sender_leaf_index,
+      sender_context_match_expected: true, total_length: userTotal,
     },
     uuids: { inputs: uuidInputs, values: uuidValues },
   };

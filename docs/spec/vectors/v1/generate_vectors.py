@@ -24,6 +24,7 @@ LABELS = {
     "bootstrap_record_aad": "mesh-messenger/v1/bootstrap-record",
     "bootstrap_routing_tag": "mesh-messenger/v1/bootstrap-routing-tag",
     "contact_bundle_aad": "mesh-messenger/v1/contact-bundle",
+    "database_wrap_aad": "mesh-messenger/v1/database-key-wrap",
     "device_certificate_aad": "mesh-messenger/v1/device-certificate",
     "hpke_info": "mesh-messenger/v1/bootstrap-hpke",
     "identity_id": "mesh-messenger/v1/identity-id",
@@ -36,6 +37,9 @@ LABELS = {
     "safety_number": "mesh-messenger/v1/safety-number",
     "storage_wrap_aad": "mesh-messenger/v1/linux-storage-wrap",
 }
+
+APPLICATION_FIXTURE_PATH = Path(__file__).with_name("openmls_16_member_measurement.json")
+APPLICATION_FIXTURE_SHA256 = "1015e46e7423a57bc00e12c0c7008c648cb468a3df0b41cea77c3ad585395b7f"
 
 OPENMLS_COMMIT = "47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6"
 OPENMLS_WELCOME_FILE_SHA256 = "06be9d5c99817ef2545e4b15b8e73fd9b604685a8e55b59ca168eda98e236502"
@@ -399,18 +403,26 @@ def make_inner(kind: int, content: bytes, total_plaintext: int, pad_start: int) 
 
 
 def smallest_class(required: int) -> int:
-    for size in [256, 512, 1024, 1536, 2048, 3072, 4096]:
+    for size in [256, 512, 1024, 1536, 2048, 3072, 4096, 8192]:
         if required <= size:
             return size
     raise ValueError("envelope too large")
 
 
 def build_vectors() -> dict[str, Any]:
-    entropy_a = bytes(32)
-    entropy_b = bytes([0xFF]) * 32
+    fixture_bytes = APPLICATION_FIXTURE_PATH.read_bytes()
+    if hx(sha256(fixture_bytes)) != APPLICATION_FIXTURE_SHA256:
+        raise AssertionError("application-bound OpenMLS fixture digest mismatch")
+    application_fixture = json.loads(fixture_bytes)
+    if application_fixture["openmls_revision"] != OPENMLS_COMMIT:
+        raise AssertionError("application-bound OpenMLS revision mismatch")
+
+    zero_entropy = bytes(32)
+    entropy_a = bytes([0xFF]) * 32
+    entropy_b = bytes(range(32))
     checksum = sha256(entropy_a)[0]
-    indices = [0] * 23 + [checksum]
-    phrase = " ".join(["abandon"] * 23 + ["art"])
+    indices = [2047] * 23 + [(7 << 8) | checksum]
+    phrase = " ".join(["zoo"] * 23 + ["vote"])
 
     root_prk_a = hkdf_extract(b"", entropy_a)
     root_seed_a = hkdf_expand(root_prk_a, LABELS["root_seed"].encode(), 32)
@@ -428,71 +440,182 @@ def build_vectors() -> dict[str, Any]:
     safety_digits = str(int.from_bytes(safety_digest, "big") % (10**60)).zfill(60)
     safety_display = " ".join(safety_digits[i : i + 5] for i in range(0, 60, 5))
 
-    issued = 30_000_000
-    device_seed = bytes(range(0x20, 0x40))
-    device_pub = ed_public(device_seed)
-    device_id = bytes(range(0x40, 0x50))
-    cert_payload = cbor(
-        {0: 1, 1: identity_a, 2: device_id, 3: device_pub, 4: issued, 5: None, 6: 1}
-    )
-    cert_cose = cose_sign1(cert_payload, root_seed_a, LABELS["device_certificate_aad"].encode())
-    mls_credential = cbor({0: 1, 1: root_pub_a, 2: cert_cose})
+    issued = application_fixture["issued_minute"]
+
+    def fixture_identity(role: str) -> dict[str, bytes]:
+        record = application_fixture["application_binding"][role]
+        root_seed = bytes.fromhex(record["root_seed_public_test_only_hex"])
+        device_seed = bytes.fromhex(record["device_seed_public_test_only_hex"])
+        root_public = ed_public(root_seed)
+        device_public = ed_public(device_seed)
+        identity_id = sha256(LABELS["identity_id"].encode() + root_public)[:16]
+        if hx(root_public) != record["root_public_hex"] or hx(device_public) != record["device_public_hex"]:
+            raise AssertionError(f"{role} fixture public-key mismatch")
+        if hx(identity_id) != record["identity_id_hex"]:
+            raise AssertionError(f"{role} fixture identity mismatch")
+        certificate_payload = cbor(
+            {
+                0: 1,
+                1: identity_id,
+                2: bytes.fromhex(record["device_instance_id_hex"]),
+                3: device_public,
+                4: issued,
+                5: None,
+                6: 1,
+            }
+        )
+        certificate = cose_sign1(
+            certificate_payload,
+            root_seed,
+            LABELS["device_certificate_aad"].encode(),
+        )
+        credential = cbor({0: 1, 1: root_public, 2: certificate})
+        if hx(credential) != record["credential_cbor_hex"]:
+            raise AssertionError(f"{role} fixture credential mismatch")
+        return {
+            "root_seed": root_seed,
+            "root_public": root_public,
+            "identity_id": identity_id,
+            "device_seed": device_seed,
+            "device_public": device_public,
+            "device_id": bytes.fromhex(record["device_instance_id_hex"]),
+            "certificate_payload": certificate_payload,
+            "certificate": certificate,
+            "credential": credential,
+        }
+
+    owner = fixture_identity("owner")
+    recipient = fixture_identity("recipient")
+    outsider = fixture_identity("outsider")
+    device_seed = owner["device_seed"]
+    device_pub = owner["device_public"]
+    device_id = owner["device_id"]
+    cert_payload = owner["certificate_payload"]
+    cert_cose = owner["certificate"]
+    mls_credential = owner["credential"]
 
     bundle_id = bytes(range(0xB0, 0xC0))
     hpke_recipient_seed = bytes(range(0xA0, 0xC0))
     hpke_recipient_pub = x_public(hpke_recipient_seed)
     rendezvous = bytes(range(0x70, 0x90))
-    upstream_key_package = OPENMLS_KEY_PACKAGE
+    application_key_package = bytes.fromhex(
+        application_fixture["recipient_key_package_tls"]["hex"]
+    )
+    if len(application_key_package) != 474:
+        raise AssertionError("application KeyPackage length mismatch")
     contact_payload = cbor(
         {
             0: 1,
             1: bundle_id,
             2: issued,
             3: issued + 10_080,
-            4: root_pub_a,
-            5: cert_cose,
-            6: upstream_key_package,
+            4: recipient["root_public"],
+            5: recipient["certificate"],
+            6: application_key_package,
             7: hpke_recipient_pub,
             8: rendezvous,
         }
     )
-    contact_cose = cose_sign1(contact_payload, device_seed, LABELS["contact_bundle_aad"].encode())
+    contact_cose = cose_sign1(
+        contact_payload,
+        recipient["device_seed"],
+        LABELS["contact_bundle_aad"].encode(),
+    )
     qr = "meshmsg:v1:" + base64.urlsafe_b64encode(contact_cose).decode().rstrip("=")
 
     invitation_id = bytes(range(0xE0, 0xF0))
-    upstream_welcome = OPENMLS_WELCOME
+    application_welcome = bytes.fromhex(
+        application_fixture["welcome_mls_message_tls"]["hex"]
+    )
+    if len(application_welcome) != 6622:
+        raise AssertionError("application Welcome length mismatch")
     bootstrap_payload = cbor(
         {
             0: 1,
             1: bundle_id,
-            2: upstream_welcome,
+            2: application_welcome,
             3: mls_credential,
-            4: 1,
-            5: None,
+            4: 2,
+            5: owner["identity_id"],
             6: invitation_id,
         }
     )
     bootstrap_cose = cose_sign1(
         bootstrap_payload, device_seed, LABELS["bootstrap_record_aad"].encode()
     )
+    if len(bootstrap_cose) != 6962:
+        raise AssertionError("measured bootstrap COSE length mismatch")
+
+    wrong_key_package_payload = cbor(
+        {
+            0: 1,
+            1: bytes(range(0x90, 0xA0)),
+            2: issued,
+            3: issued + 10_080,
+            4: owner["root_public"],
+            5: owner["certificate"],
+            6: application_key_package,
+            7: hpke_recipient_pub,
+            8: rendezvous,
+        }
+    )
+    wrong_key_package_cose = cose_sign1(
+        wrong_key_package_payload,
+        owner["device_seed"],
+        LABELS["contact_bundle_aad"].encode(),
+    )
+    if owner["credential"] == recipient["credential"]:
+        raise AssertionError("negative KeyPackage credential unexpectedly matched")
+
+    outsider_bundle_id = bytes(range(0x80, 0x90))
+    outsider_key_package = bytes.fromhex(
+        application_fixture["negative_application_binding"]
+        ["wrong_welcome_recipient_key_package_tls"]["hex"]
+    )
+    wrong_welcome_payload = cbor(
+        {
+            0: 1,
+            1: outsider_bundle_id,
+            2: application_welcome,
+            3: owner["credential"],
+            4: 2,
+            5: owner["identity_id"],
+            6: bytes(range(0x60, 0x70)),
+        }
+    )
+    wrong_welcome_cose = cose_sign1(
+        wrong_welcome_payload,
+        owner["device_seed"],
+        LABELS["bootstrap_record_aad"].encode(),
+    )
 
     app_event_id = bytes(range(0x10, 0x20))
-    app_cbor = cbor({0: 1, 1: 1, 2: app_event_id, 3: 1, 4: "mesh test"})
+    receipt_event_id = bytes(range(0x20, 0x30))
+    replacement_event_id = bytes(range(0x30, 0x40))
+    application_records = {
+        "text": cbor({0: 1, 1: 1, 2: app_event_id, 3: 1, 4: "mesh test"}),
+        "delivery_receipt": cbor(
+            {0: 1, 1: 2, 2: receipt_event_id, 3: 2, 4: {0: app_event_id}}
+        ),
+        "device_replacement_notice": cbor(
+            {0: 1, 1: 3, 2: replacement_event_id, 3: 3, 4: owner["certificate"]}
+        ),
+    }
     initiator_session_id = bytes(range(0xD0, 0xE0))
     initiator_node_run_id = bytes(range(0xE0, 0xF0))
     responder_session_id = bytes(range(0xC0, 0xD0))
     responder_node_run_id = bytes(range(0xF0, 0x100))
-    sync_cbor = cbor(
+    def sync_record(kind: int, payload: Any) -> bytes:
+        return cbor({0: 1, 1: kind, 2: payload})
+
+    sync_cbor = sync_record(
+        1,
         {
-            0: 1,
-            1: 1,
-            2: {
-                0: initiator_session_id,
-                1: initiator_node_run_id,
-                2: 4096,
-                3: 256,
-            },
-        }
+            0: initiator_session_id,
+            1: initiator_node_run_id,
+            2: 8192,
+            3: 256,
+        },
     )
     responder_sync_cbor = cbor(
         {
@@ -501,7 +624,7 @@ def build_vectors() -> dict[str, Any]:
             2: {
                 0: responder_session_id,
                 1: responder_node_run_id,
-                2: 4096,
+                2: 8192,
                 3: 256,
             },
         }
@@ -511,6 +634,8 @@ def build_vectors() -> dict[str, Any]:
         struct.pack(">I", len(responder_sync_cbor)) + responder_sync_cbor
     )
     noise = noise_nn(sync_plaintext, responder_sync_plaintext)
+    if len(noise["message1"]) != 32 or len(noise["message2"]) != 48:
+        raise AssertionError("Noise NN empty-payload handshake length mismatch")
     snow_kat = noise_nn(
         SNOW_VECTOR_PAYLOADS[2],
         SNOW_VECTOR_PAYLOADS[3],
@@ -535,6 +660,14 @@ def build_vectors() -> dict[str, Any]:
         struct.pack(">I", len(noise["initiator_ciphertext"]))
         + noise["initiator_ciphertext"]
     )
+    ble_handshake_message1 = (
+        bytes([1, 3]) + struct.pack(">HHH", 0x1200, 0, 32) + noise["message1"]
+    )
+    ble_handshake_message2 = (
+        bytes([1, 3]) + struct.pack(">HHH", 0x1201, 0, 48) + noise["message2"]
+    )
+    wlan_handshake_message1 = struct.pack(">I", 32) + noise["message1"]
+    wlan_handshake_message2 = struct.pack(">I", 48) + noise["message2"]
 
     kat_exported_secret = mls_export(
         OPENMLS_EXPORTER_SECRET,
@@ -544,13 +677,34 @@ def build_vectors() -> dict[str, Any]:
     )
     if kat_exported_secret != OPENMLS_EXPORTER_KAT_SECRET:
         raise AssertionError("OpenMLS exporter KAT mismatch")
-    routing_secret = mls_export(
+    upstream_routing_secret = mls_export(
         OPENMLS_EXPORTER_SECRET, LABELS["routing_exporter"], b"", 32
     )
-    outer_key = mls_export(
-        OPENMLS_EXPORTER_SECRET, LABELS["outer_exporter"], b"", 16
-    )
-    created_user = 30_000_120
+    upstream_sender_outer_keys = [
+        {
+            "sender_leaf_index": leaf,
+            "context_hex": hx(struct.pack(">I", leaf)),
+            "outer_key_hex": hx(
+                mls_export(
+                    OPENMLS_EXPORTER_SECRET,
+                    LABELS["outer_exporter"],
+                    struct.pack(">I", leaf),
+                    16,
+                )
+            ),
+        }
+        for leaf in range(16)
+    ]
+    application_exporters = application_fixture["application_exporters"]
+    routing_secret = bytes.fromhex(application_exporters["routing_secret_hex"])
+    sender_outer_keys = application_exporters["sender_outer_keys"]
+    if len(sender_outer_keys) != 16 or len({entry["outer_key_hex"] for entry in sender_outer_keys}) != 16:
+        raise AssertionError("application sender outer-key coverage mismatch")
+    for leaf, entry in enumerate(sender_outer_keys):
+        if entry["sender_leaf_index"] != leaf or entry["context_hex"] != hx(struct.pack(">I", leaf)):
+            raise AssertionError("application sender outer-key context mismatch")
+    outer_key = bytes.fromhex(sender_outer_keys[0]["outer_key_hex"])
+    created_user = issued + 120
     slot_user = created_user // 360
     route_tag = hmac.new(
         routing_secret,
@@ -559,7 +713,12 @@ def build_vectors() -> dict[str, Any]:
     ).digest()[:16]
     user_id = bytes.fromhex("00112233445566778899aabbccddeeff")
     user_nonce = bytes.fromhex("0102030405060708090a0b0c")
-    user_total = 256
+    application_mls = bytes.fromhex(
+        application_fixture["application_message"]["mls_message_tls"]["hex"]
+    )
+    if application_fixture["application_message"]["authenticated_sender_leaf_index"] != 0:
+        raise AssertionError("application MLS sender fixture mismatch")
+    user_total = smallest_class(80 + 16 + 4 + len(application_mls))
     user_base_header = header(
         mode=1,
         traffic_class=1,
@@ -570,8 +729,7 @@ def build_vectors() -> dict[str, Any]:
         expires=created_user + 1_440,
         nonce=user_nonce,
     )
-    fake_mls = bytes.fromhex("0001deadbeef")
-    user_plain = make_inner(1, fake_mls, user_total - 80 - 16, 0x40)
+    user_plain = make_inner(1, application_mls, user_total - 80 - 16, 0x40)
     user_sealed = AESGCM(outer_key).encrypt(
         user_nonce, user_plain, normalized_header(user_base_header)
     )
@@ -594,20 +752,67 @@ def build_vectors() -> dict[str, Any]:
         normalized_header(conflict_header) + conflict_sealed
     )
 
-    lora_frames: list[bytes] = []
-    fragment_count = (len(user_envelope) + 159) // 160
-    for index in range(fragment_count):
-        fragment = user_envelope[index * 160 : (index + 1) * 160]
-        fragment += bytes([0xA5]) * (160 - len(fragment))
-        lora_frames.append(bytes([1, 0]) + user_id + bytes([index, fragment_count]) + fragment)
-    alternate_final = bytearray(lora_frames[-1])
-    final_meaningful = {2: 96, 4: 32, 7: 64, 10: 96}[fragment_count]
-    alternate_final[20 + final_meaningful :] = bytes([0x5A]) * (
-        160 - final_meaningful
-    )
-    alternate_final_frame = bytes(alternate_final)
+    def fragment_vector(envelope: bytes) -> dict[str, Any]:
+        envelope_id = envelope[12:28]
+        fragment_count = (len(envelope) + 159) // 160
+        final_meaningful = {2: 96, 4: 32, 7: 64, 10: 96}[fragment_count]
+        frames: list[bytes] = []
+        for index in range(fragment_count):
+            fragment = envelope[index * 160 : (index + 1) * 160]
+            fragment += bytes([0xA5]) * (160 - len(fragment))
+            frames.append(
+                bytes([1, 0])
+                + envelope_id
+                + bytes([index, fragment_count])
+                + fragment
+            )
+        alternate_final = bytearray(frames[-1])
+        alternate_final[20 + final_meaningful :] = bytes([0x5A]) * (
+            160 - final_meaningful
+        )
+        return {
+            "alternate_final_frame_hex": hx(bytes(alternate_final)),
+            "alternate_final_frame_sha256": hx(sha256(bytes(alternate_final))),
+            "envelope_hex": hx(envelope),
+            "envelope_sha256": hx(sha256(envelope)),
+            "final_meaningful_bytes": final_meaningful,
+            "fragment_count": fragment_count,
+            "frames_hex": [hx(frame) for frame in frames],
+            "frames_sha256": [hx(sha256(frame)) for frame in frames],
+        }
 
-    created_bootstrap = 30_000_240
+    lora_envelopes: dict[int, bytes] = {user_total: user_envelope}
+    for mapping_index, mapping_size in enumerate([256, 512, 1024, 1536]):
+        if mapping_size in lora_envelopes:
+            continue
+        mapping_id = bytes([0x50 + mapping_index]) * 16
+        mapping_nonce = bytes([0x60 + mapping_index]) * 12
+        mapping_header = header(
+            mode=1,
+            traffic_class=1,
+            total_length=mapping_size,
+            envelope_id=mapping_id,
+            routing_tag=route_tag,
+            created=created_user,
+            expires=created_user + 1_440,
+            nonce=mapping_nonce,
+        )
+        mapping_mls = application_mls if mapping_size >= 512 else bytes.fromhex("0001deadbeef")
+        mapping_plain = make_inner(
+            1, mapping_mls, mapping_size - 80 - 16, 0x50 + mapping_index
+        )
+        mapping_sealed = AESGCM(outer_key).encrypt(
+            mapping_nonce, mapping_plain, normalized_header(mapping_header)
+        )
+        _, mapping_pow_header, _ = find_pow(mapping_header, mapping_sealed)
+        lora_envelopes[mapping_size] = mapping_pow_header + mapping_sealed
+    lora_mappings = {
+        f"size_{size}": fragment_vector(lora_envelopes[size])
+        for size in [256, 512, 1024, 1536]
+    }
+    lora_mappings["size_256"]["transport_only_inner_mls_stub"] = True
+
+    created_bootstrap = issued + 240
     slot_bootstrap = created_bootstrap // 360
     bootstrap_tag = hmac.new(
         rendezvous,
@@ -616,6 +821,8 @@ def build_vectors() -> dict[str, Any]:
     ).digest()[:16]
     required_bootstrap = 80 + 32 + 16 + 4 + len(bootstrap_cose)
     bootstrap_total = smallest_class(required_bootstrap)
+    if required_bootstrap != 7094 or bootstrap_total != 8192:
+        raise AssertionError("measured bootstrap envelope limit mismatch")
     bootstrap_id = bytes.fromhex("ffeeddccbbaa99887766554433221100")
     bootstrap_base_header = header(
         mode=2,
@@ -642,6 +849,27 @@ def build_vectors() -> dict[str, Any]:
         bootstrap_base_header, bootstrap_sealed
     )
     bootstrap_envelope = bootstrap_header + bootstrap_sealed
+
+    inventory_ids = sorted([user_id, bootstrap_id])
+    sync_variant_bytes = {
+        "hello_initiator": sync_cbor,
+        "hello_responder": responder_sync_cbor,
+        "inventory": sync_record(2, inventory_ids),
+        "request": sync_record(3, [user_id]),
+        "push": sync_record(4, [user_envelope, bootstrap_envelope]),
+        "custody_ack_both_statuses": sync_record(
+            5, [[user_id, 0], [bootstrap_id, 1]]
+        ),
+        **{f"goodbye_reason_{reason}": sync_record(6, reason) for reason in range(4)},
+        **{f"error_reason_{reason}": sync_record(7, reason) for reason in range(2)},
+    }
+    sync_variants = {
+        name: {
+            "cbor_hex": hx(record),
+            "plaintext_frame_hex": hx(struct.pack(">I", len(record)) + record),
+        }
+        for name, record in sync_variant_bytes.items()
+    }
 
     storage_passphrase = unicodedata.normalize("NFKC", "correct horse battery staple")
     storage_salt = bytes(range(0x00, 0x10))
@@ -671,6 +899,38 @@ def build_vectors() -> dict[str, Any]:
     )
     storage_record = storage_header + storage_wrapped
 
+    platform_database_id = bytes(range(0x01, 0x11))
+    android_wrapping_key = bytes(range(0x40, 0x60))
+    android_nonce = bytes(range(0xE0, 0xEC))
+    android_header = (
+        b"MDA1"
+        + bytes([1, 1])
+        + bytes(2)
+        + platform_database_id
+        + android_nonce
+        + struct.pack(">H", 48)
+    )
+    android_aad = LABELS["database_wrap_aad"].encode() + android_header
+    android_wrapped = AESGCM(android_wrapping_key).encrypt(
+        android_nonce, database_key, android_aad
+    )
+    android_record = android_header + android_wrapped
+    if len(android_record) != 86:
+        raise AssertionError("Android wrapping record length mismatch")
+
+    windows_entropy = sha256(
+        LABELS["database_wrap_aad"].encode() + platform_database_id
+    )
+    synthetic_dpapi_blob = pattern(64, 0x33)
+    windows_record = (
+        b"MDW1"
+        + bytes([1, 2])
+        + bytes(2)
+        + platform_database_id
+        + struct.pack(">I", len(synthetic_dpapi_blob))
+        + synthetic_dpapi_blob
+    )
+
     uuid_inputs = {
         "service": "https://mesh-messenger.invalid/ble/service/v1",
         "write": "https://mesh-messenger.invalid/ble/write/v1",
@@ -680,11 +940,16 @@ def build_vectors() -> dict[str, Any]:
 
     return {
         "application_cbor": {
-            "event_id_hex": hx(app_event_id),
-            "text": "mesh test",
-            "text_record_hex": hx(app_cbor),
+            "device_replacement_notice_event_id_hex": hx(replacement_event_id),
+            "delivery_receipt_event_id_hex": hx(receipt_event_id),
+            "records_hex": {
+                name: hx(record) for name, record in application_records.items()
+            },
+            "text_event_id_hex": hx(app_event_id),
         },
         "ble_and_wlan": {
+            "ble_handshake_message1_chunk_hex": hx(ble_handshake_message1),
+            "ble_handshake_message2_chunk_hex": hx(ble_handshake_message2),
             "ble_link_chunk_hex": hx(ble_chunk),
             "initiator_noise_transport_ciphertext_hex": hx(
                 noise["initiator_ciphertext"]
@@ -693,6 +958,9 @@ def build_vectors() -> dict[str, Any]:
             "responder_sync_plaintext_frame_hex": hx(responder_sync_plaintext),
             "sync_hello_cbor_hex": hx(sync_cbor),
             "sync_plaintext_frame_hex": hx(sync_plaintext),
+            "sync_variants": sync_variants,
+            "wlan_handshake_message1_frame_hex": hx(wlan_handshake_message1),
+            "wlan_handshake_message2_frame_hex": hx(wlan_handshake_message2),
             "wlan_noise_frame_hex": hx(wlan_frame),
         },
         "bootstrap_envelope": {
@@ -712,6 +980,8 @@ def build_vectors() -> dict[str, Any]:
             "routing_tag_hex": hx(bootstrap_tag),
             "shared_secret_hex": hx(hpke["shared_secret"]),
             "slot": slot_bootstrap,
+            "bootstrap_cose_length": len(bootstrap_cose),
+            "minimum_unpadded_length": required_bootstrap,
             "total_length": bootstrap_total,
         },
         "canonical_objects": {
@@ -722,9 +992,25 @@ def build_vectors() -> dict[str, Any]:
             "device_certificate_cose_hex": hx(cert_cose),
             "device_certificate_payload_hex": hx(cert_payload),
             "mls_credential_cbor_hex": hx(mls_credential),
-            "application_binding_expected": "POLICY_REJECT_UPSTREAM_OBJECT_NOT_APPLICATION_BOUND",
-            "upstream_key_package_tls_hex": hx(upstream_key_package),
-            "upstream_welcome_tls_hex": hx(upstream_welcome),
+            "positive_application_binding_expected": "ACCEPT",
+            "positive_key_package_tls_hex": hx(application_key_package),
+            "positive_welcome_tls_hex": hx(application_welcome),
+            "positive_member_count": application_fixture["member_count"],
+            "positive_join_validation": application_fixture["join_validation"],
+            "negative_key_package_contact_cose_hex": hx(wrong_key_package_cose),
+            "negative_key_package_contact_payload_hex": hx(wrong_key_package_payload),
+            "negative_key_package_expected": application_fixture["negative_application_binding"]["expected_key_package_result"],
+            "negative_key_package_expected_credential_hex": hx(owner["credential"]),
+            "negative_key_package_actual_credential_hex": hx(recipient["credential"]),
+            "negative_welcome_bootstrap_cose_hex": hx(wrong_welcome_cose),
+            "negative_welcome_bootstrap_payload_hex": hx(wrong_welcome_payload),
+            "negative_welcome_outsider_credential_hex": hx(outsider["credential"]),
+            "negative_welcome_outsider_key_package_tls_hex": hx(outsider_key_package),
+            "negative_welcome_expected": application_fixture["negative_application_binding"]["expected_welcome_result"],
+            "negative_welcome_openmls_error": application_fixture["negative_application_binding"]["wrong_welcome_recipient_openmls_error"],
+            "upstream_application_binding_expected": "POLICY_REJECT_UPSTREAM_OBJECT_NOT_APPLICATION_BOUND",
+            "upstream_key_package_tls_hex": hx(OPENMLS_KEY_PACKAGE),
+            "upstream_welcome_tls_hex": hx(OPENMLS_WELCOME),
             "qr_text": qr,
         },
         "duplicate_merge": {
@@ -751,6 +1037,9 @@ def build_vectors() -> dict[str, Any]:
             "device_seed_hex": hx(device_seed),
             "entropy_a_hex": hx(entropy_a),
             "entropy_b_hex": hx(entropy_b),
+            "positive_entropy_nonzero": True,
+            "zero_entropy_hex": hx(zero_entropy),
+            "zero_entropy_expected": "RETRY_THEN_FAIL_AFTER_EIGHT_ALL_ZERO_DRAWS",
             "identity_a_hex": hx(identity_a),
             "identity_b_hex": hx(identity_b),
             "root_prk_a_hex": hx(root_prk_a),
@@ -772,19 +1061,62 @@ def build_vectors() -> dict[str, Any]:
             "scrypt_r": 8,
             "wrap_key_hex": hx(wrap_key),
         },
+        "platform_storage_wrap": {
+            "database_id_hex": hx(platform_database_id),
+            "android": {
+                "aad_hex": hx(android_aad),
+                "alias": "mesh-messenger-v1-db-" + hx(platform_database_id),
+                "nonce_hex": hx(android_nonce),
+                "record_hex": hx(android_record),
+                "record_length": len(android_record),
+                "wrapping_key_public_test_only_hex": hx(android_wrapping_key),
+            },
+            "ios": {
+                "access_control_flags": [],
+                "access_group": "application-default",
+                "accessibility": "kSecAttrAccessibleWhenUnlockedThisDeviceOnly",
+                "account": hx(platform_database_id),
+                "data_hex": hx(database_key),
+                "service": "mesh-messenger/v1/database-key",
+                "synchronizable": False,
+                "use_data_protection_keychain": False,
+            },
+            "macos": {
+                "access_control_flags": [],
+                "access_group": "application-default",
+                "accessibility": "kSecAttrAccessibleWhenUnlockedThisDeviceOnly",
+                "account": hx(platform_database_id),
+                "data_hex": hx(database_key),
+                "service": "mesh-messenger/v1/database-key",
+                "synchronizable": False,
+                "use_data_protection_keychain": True,
+            },
+            "ubuntu_secret_service": {
+                "attributes": {
+                    "application": "mesh-messenger-v1",
+                    "database-id": hx(platform_database_id),
+                },
+                "collection": "default",
+                "content_type": "application/octet-stream",
+                "secret_hex": hx(database_key),
+            },
+            "windows": {
+                "description": "mesh-messenger-v1",
+                "dpapi_blob_hex": hx(synthetic_dpapi_blob),
+                "dpapi_blob_is_synthetic_opaque_test_data": True,
+                "flags": ["CRYPTPROTECT_UI_FORBIDDEN"],
+                "optional_entropy_hex": hx(windows_entropy),
+                "record_hex": hx(windows_record),
+            },
+        },
         "lora": {
-            "alternate_final_frame_hex": hx(alternate_final_frame),
-            "alternate_final_frame_sha256": hx(sha256(alternate_final_frame)),
-            "final_meaningful_bytes": final_meaningful,
-            "fragment_count": fragment_count,
-            "frames_hex": [hx(frame) for frame in lora_frames],
-            "frames_sha256": [hx(sha256(frame)) for frame in lora_frames],
+            "mappings": lora_mappings,
         },
         "meta": {
             "cbor_profile": "RFC8949-deterministic",
-            "note": "Test-only private values; valid pinned OpenMLS objects and exporter input remain subject to the recorded application-binding rejection.",
+            "note": "All private values are public test-only fixtures and must never be used in production; draft.2 awaits independent and human review.",
             "schema": "mesh-messenger-vectors/1",
-            "spec_version": "1.0.0-draft.1",
+            "spec_version": "1.0.0-draft.2",
         },
         "noise_nn": {
             "ee_shared_secret_hex": hx(noise["ee_shared_secret"]),
@@ -797,7 +1129,11 @@ def build_vectors() -> dict[str, Any]:
                 noise["initiator_ciphertext"]
             ),
             "message1_hex": hx(noise["message1"]),
+            "message1_length": len(noise["message1"]),
+            "message1_payload_hex": "",
             "message2_hex": hx(noise["message2"]),
+            "message2_length": len(noise["message2"]),
+            "message2_payload_hex": "",
             "prologue_utf8_hex": hx(LABELS["noise_prologue"].encode()),
             "protocol_name": NOISE_PROTOCOL_NAME.decode(),
             "responder_private_hex": hx(NOISE_RESPONDER_PRIVATE),
@@ -813,8 +1149,10 @@ def build_vectors() -> dict[str, Any]:
             ),
         },
         "openmls_upstream": {
-            "application_outer_key_hex": hx(outer_key),
+            "application_fixture_sha256": APPLICATION_FIXTURE_SHA256,
+            "application_fixture_source": "openmls_16_member_measurement.json",
             "application_routing_secret_hex": hx(routing_secret),
+            "application_sender_outer_keys": sender_outer_keys,
             "cipher_suite": 1,
             "exporter_kat_context_hex": hx(OPENMLS_EXPORTER_KAT_CONTEXT),
             "exporter_kat_expected_secret_hex": hx(OPENMLS_EXPORTER_KAT_SECRET),
@@ -831,6 +1169,8 @@ def build_vectors() -> dict[str, Any]:
             "valid_welcome_tls_hex": hx(OPENMLS_WELCOME),
             "welcome_file_sha256": OPENMLS_WELCOME_FILE_SHA256,
             "welcome_sha256": hx(sha256(OPENMLS_WELCOME)),
+            "upstream_application_routing_secret_hex": hx(upstream_routing_secret),
+            "upstream_application_sender_outer_keys": upstream_sender_outer_keys,
         },
         "routing_and_user_envelope": {
             "aad_normalized_header_hex": hx(normalized_header(user_header)),
@@ -845,6 +1185,10 @@ def build_vectors() -> dict[str, Any]:
             "routing_tag_hex": hx(route_tag),
             "sealed_body_hex": hx(user_sealed),
             "slot": slot_user,
+            "selected_sender_context_hex": "00000000",
+            "selected_sender_leaf_index": 0,
+            "authenticated_mls_sender_leaf_index": application_fixture["application_message"]["authenticated_sender_leaf_index"],
+            "sender_context_match_expected": True,
             "total_length": user_total,
         },
         "uuids": {"inputs": uuid_inputs, "values": uuid_values},
