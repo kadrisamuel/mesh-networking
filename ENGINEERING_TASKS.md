@@ -14,11 +14,12 @@ This task pack decomposes `MVP_PLAN.md` into bounded implementation packets. It 
 4. Use the recommended model and reasoning effort. A cheaper model may be used only when the task recommends it.
 5. If a required specification, fixture, tool, credential, device, or decision is missing, stop and report the blocker. Never improvise a wire format, cryptographic rule, radio policy, migration, or security guarantee.
 6. After implementation, require the evidence listed in the task packet. A passing test claim without command output or an artifact is not completion evidence.
+7. Require implementation models to follow the commit policy below. Implementation commits are checkpoints, not coordinator acceptance.
 
 ### Copyable executor prompt
 
 ```text
-Implement exactly task <TASK-ID> from <PHASE-FILE>.
+Implement exactly task <TASK-ID> from <PHASE-FILE> on branch <TASK-BRANCH>.
 
 Read first:
 1. MVP_PLAN.md
@@ -27,21 +28,44 @@ Read first:
 4. Repository AGENTS.md files that apply to paths you may edit
 
 Rules:
+- Before editing, record the starting HEAD commit and confirm that <TASK-BRANCH> is checked out. Stop if the worktree is on main, master, a coordinator-designated protected branch, or detached HEAD.
+- Inspect the initial worktree state. Stop and report any pre-existing change outside this task's allowed paths.
 - Work only within the task's allowed paths and stated objective.
 - Preserve existing user changes and do not perform opportunistic refactors or upgrades.
 - Do not change frozen protocol constants, schemas, migrations, generated files, or public interfaces unless this task explicitly owns them.
 - Add or update the required tests and run every verification command in the task.
 - If a prerequisite is missing or a security choice is ambiguous, stop and return a blocker instead of guessing.
 - Do not weaken, skip, delete, or rewrite a test merely to make it pass.
+- Stage explicit allowed paths only. Never use git add . or git add -A.
+- Create local commits according to the commit policy. Do not merge, push, rebase, or update task status.
 
 Return:
 - outcome
 - files changed
+- starting HEAD, ordered commits with hash and purpose, and final HEAD
 - commands run and exact results
 - acceptance checklist
 - assumptions or deviations
 - remaining risks or blockers
 ```
+
+## Commit policy
+
+Implementation models create local commits on the assigned task branch unless the coordinator explicitly supplies a `NO-COMMIT` instruction.
+
+- Before editing, record the starting HEAD and confirm that the assigned task branch is checked out. Stop on `main`, `master`, a coordinator-designated protected branch, or detached HEAD.
+- Inspect the initial worktree state. Stop and report any pre-existing change outside the task's allowed paths.
+- Use one implementation commit for a small atomic task.
+- For a long task, commit each coherent, independently reviewable milestone.
+- Before each commit, run the verification applicable to that milestone and scan the staged diff for secrets and out-of-scope files.
+- Stage explicit allowed paths only; never use `git add .` or `git add -A`.
+- Commit only paths allowed by the task. Never commit real credentials, production private keys, real recovery material, temporary files, unrelated changes, or knowingly broken output. Deterministic secret inputs are allowed only when the task explicitly requires public test vectors and the files clearly identify them as public, test-only fixtures that must never be used in production.
+- Use messages in the form `<TASK-ID>: <imperative summary>`.
+- Do not merge, push, rebase, reset, amend, force-update, otherwise rewrite history, edit `TASK_TRACKER.md`, or mark the task complete unless the coordinator explicitly authorizes that exact action.
+- On a successful implementation handoff, commit all task-owned changes and leave no uncommitted task changes. If blocked, preserve earlier safe checkpoint commits but do not commit incomplete or unsafe output merely to clean the worktree; report every remaining change.
+- Return the starting HEAD, every ordered task commit with its purpose, the final HEAD, and final `git status --short` output.
+
+The coordinator reviews the complete `<starting-HEAD>..<final-HEAD>` range, final worktree state, verification evidence, and required human gates. The coordinator may request additional fix commits, then chooses merge or squash-merge and records the accepted commit in `TASK_TRACKER.md`.
 
 ## Model recommendations
 
