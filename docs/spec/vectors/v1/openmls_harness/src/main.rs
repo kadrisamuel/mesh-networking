@@ -205,14 +205,25 @@ fn main() {
 
     let owner_provider = Provider::default();
     let owner = application_bound_identity(0, issued_minute);
+    let group_id_bytes = (0..8)
+        .find_map(|_| {
+            let candidate = owner_provider
+                .rand()
+                .random_array::<32>()
+                .expect("configured provider group-ID randomness failed");
+            (candidate != [0u8; 32]).then_some(candidate)
+        })
+        .expect("configured provider returned eight all-zero group IDs");
+    assert_eq!(group_id_bytes.len(), 32);
     let mut group = MlsGroup::new_with_group_id(
         &owner_provider,
         &owner.signer,
         &config,
-        GroupId::from_slice(b"DEC-001-16-member-measurement"),
+        GroupId::from_slice(&group_id_bytes),
         owner.credential_with_key.clone(),
     )
     .unwrap();
+    assert_eq!(group.group_id().as_slice(), group_id_bytes);
 
     let mut credential_evidence = vec![json!({
         "member": 0,
@@ -395,7 +406,7 @@ fn main() {
     }
 
     let evidence = json!({
-        "schema": "DEC-001-OpenMLS-measurement-v1",
+        "schema": "DEC-001-OpenMLS-measurement-v2",
         "public_test_fixture": true,
         "openmls_revision": OPENMLS_REVISION,
         "rustc": RUSTC_VERSION,
@@ -405,6 +416,14 @@ fn main() {
         "wire_format_policy": "PURE_CIPHERTEXT_WIRE_FORMAT_POLICY",
         "ratchet_tree_extension": true,
         "member_count": MEMBER_COUNT,
+        "group_id": {
+            "length": group_id_bytes.len(),
+            "hex": hex::encode(group_id_bytes),
+            "sha256": sha256_hex(&group_id_bytes),
+            "all_zero": false,
+            "source": "openmls_libcrux_crypto::Provider randomness",
+            "draw_limit": 8,
+        },
         "issued_minute": issued_minute,
         "not_before_seconds": not_before,
         "not_after_seconds": not_after,

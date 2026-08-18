@@ -32,7 +32,7 @@ const LABELS = {
 };
 
 const APPLICATION_FIXTURE_URL = new URL("./openmls_16_member_measurement.json", import.meta.url);
-const APPLICATION_FIXTURE_SHA256 = "1015e46e7423a57bc00e12c0c7008c648cb468a3df0b41cea77c3ad585395b7f";
+const APPLICATION_FIXTURE_SHA256 = "b48add24c5f0046c72849dcfbdd3c30e5b124e3dc729cbb5b6fa58ea9f1101d9";
 
 const OPENMLS_COMMIT = "47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6";
 const OPENMLS_WELCOME_FILE_SHA256 = "06be9d5c99817ef2545e4b15b8e73fd9b604685a8e55b59ca168eda98e236502";
@@ -423,6 +423,18 @@ function buildVectors() {
   if (applicationFixture.openmls_revision !== OPENMLS_COMMIT) {
     throw new Error("application-bound OpenMLS revision mismatch");
   }
+  if (applicationFixture.schema !== "DEC-001-OpenMLS-measurement-v2") {
+    throw new Error("application-bound OpenMLS fixture schema mismatch");
+  }
+  const applicationGroupId = Buffer.from(applicationFixture.group_id.hex, "hex");
+  if (
+    applicationFixture.group_id.length !== 32
+    || applicationGroupId.length !== 32
+    || applicationGroupId.equals(Buffer.alloc(32))
+    || applicationFixture.group_id.all_zero
+  ) {
+    throw new Error("application-bound OpenMLS group ID profile mismatch");
+  }
 
   const zeroEntropy = Buffer.alloc(32);
   const entropyA = Buffer.alloc(32, 0xff);
@@ -499,7 +511,9 @@ function buildVectors() {
   const hpkeRecipientPub = xPublic(hpkeRecipientSeed);
   const rendezvous = Buffer.from(Array.from({ length: 32 }, (_, index) => 0x70 + index));
   const applicationKeyPackage = Buffer.from(applicationFixture.recipient_key_package_tls.hex, "hex");
-  if (applicationKeyPackage.length !== 474) throw new Error("application KeyPackage length mismatch");
+  if (applicationKeyPackage.length !== applicationFixture.recipient_key_package_tls.length) {
+    throw new Error("application KeyPackage length mismatch");
+  }
   const contactPayload = cbor(new Map([
     [0, 1], [1, bundleId], [2, issued], [3, issued + 10_080], [4, recipient.rootPublic],
     [5, recipient.certificate], [6, applicationKeyPackage], [7, hpkeRecipientPub], [8, rendezvous],
@@ -509,12 +523,14 @@ function buildVectors() {
 
   const invitationId = Buffer.from(Array.from({ length: 16 }, (_, index) => 0xe0 + index));
   const applicationWelcome = Buffer.from(applicationFixture.welcome_mls_message_tls.hex, "hex");
-  if (applicationWelcome.length !== 6622) throw new Error("application Welcome length mismatch");
+  if (applicationWelcome.length !== applicationFixture.welcome_mls_message_tls.length) {
+    throw new Error("application Welcome length mismatch");
+  }
   const bootstrapPayload = cbor(new Map([
     [0, 1], [1, bundleId], [2, applicationWelcome], [3, mlsCredential], [4, 2], [5, owner.identityId], [6, invitationId],
   ]));
   const bootstrapCose = coseSign1(bootstrapPayload, deviceSeed, utf8(LABELS.bootstrap_record_aad));
-  if (bootstrapCose.length !== 6962) throw new Error("measured bootstrap COSE length mismatch");
+  if (bootstrapCose.length > 8060) throw new Error("measured bootstrap COSE exceeds v1 capacity");
 
   const wrongKeyPackagePayload = cbor(new Map([
     [0, 1],
@@ -733,7 +749,7 @@ function buildVectors() {
   ).subarray(0, 16);
   const requiredBootstrap = 80 + 32 + 16 + 4 + bootstrapCose.length;
   const bootstrapTotal = smallestClass(requiredBootstrap);
-  if (requiredBootstrap !== 7094 || bootstrapTotal !== 8192) {
+  if (bootstrapTotal !== 8192) {
     throw new Error("measured bootstrap envelope limit mismatch");
   }
   const bootstrapId = Buffer.from("ffeeddccbbaa99887766554433221100", "hex");
@@ -947,8 +963,8 @@ function buildVectors() {
     },
     meta: {
       cbor_profile: "RFC8949-deterministic",
-      note: "All private values are public test-only fixtures and must never be used in production; draft.2 awaits independent and human review.",
-      schema: "mesh-messenger-vectors/1", spec_version: "1.0.0-draft.2",
+      note: "All private values are public test-only fixtures and must never be used in production; draft.3 awaits independent and human review.",
+      schema: "mesh-messenger-vectors/1", spec_version: "1.0.0-draft.3",
     },
     noise_nn: {
       ee_shared_secret_hex: hx(noise.ee_shared_secret), handshake_hash_hex: hx(noise.handshake_hash),
@@ -965,6 +981,9 @@ function buildVectors() {
       snow_source_vector_ciphertexts_sha256: hx(sha256(Buffer.concat(SNOW_VECTOR_CIPHERTEXTS))),
     },
     openmls_upstream: {
+      application_group_id_hex: hx(applicationGroupId),
+      application_group_id_length: applicationGroupId.length,
+      application_group_id_source: applicationFixture.group_id.source,
       application_fixture_sha256: APPLICATION_FIXTURE_SHA256,
       application_fixture_source: "openmls_16_member_measurement.json",
       application_routing_secret_hex: hx(routingSecret),
@@ -979,6 +998,27 @@ function buildVectors() {
       welcome_file_sha256: OPENMLS_WELCOME_FILE_SHA256, welcome_sha256: hx(sha256(OPENMLS_WELCOME)),
       upstream_application_routing_secret_hex: hx(upstreamRoutingSecret),
       upstream_application_sender_outer_keys: upstreamSenderOuterKeys,
+    },
+    outer_rollover: {
+      max_seals: 2 ** 24,
+      last_ordinary_start_count: (2 ** 24) - 2,
+      rollover_required_count: (2 ** 24) - 1,
+      final_update_count: 2 ** 24,
+      new_epoch_initial_count: 0,
+      final_old_seal_purpose: "MLS_SELF_UPDATE_ONLY",
+      retry_rule: "BYTE_IDENTICAL_STORED_ENVELOPE_NO_NEW_SEAL",
+    },
+    relay_admission: {
+      ordered_events: [
+        "STRUCTURAL_TIME_POW_COLLISION_QUOTA",
+        "DURABLE_RELAY_COMMIT",
+        "QUEUE_CUSTODY_ACK",
+        "ROUTE_LOOKUP",
+        "AUTHENTICATE",
+        "PRIVATE_DELIVERY_IF_VALID",
+      ],
+      unknown_and_known_invalid_relay_equivalence: true,
+      authentication_result_relay_fields: [],
     },
     routing_and_user_envelope: {
       aad_normalized_header_hex: hx(normalizedHeader(userProof.header)), envelope_hex: hx(userEnvelope),

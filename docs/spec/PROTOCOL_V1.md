@@ -189,7 +189,7 @@ An HPKE bootstrap body contains one COSE_Sign1 signed by the inviter device with
 
 The complete COSE object MUST be at most 8,060 bytes, the exact content capacity of an 8,192-byte mode-2 envelope after its 80-byte header, 32-byte HPKE encapsulated key, 16-byte AEAD tag, and four-byte inner header. The Welcome MUST use the ratchet-tree extension, cipher suite `0x0001`, and the one-time KeyPackage identified by `bundle_id`. The inviter credential/signature MUST match an already accepted contact and the Welcome's authenticated committer. A consumed, expired, unknown, or mismatched bundle is rejected without network detail. Direct bootstrap must result in exactly two members and a null owner. Group bootstrap must result in 2–16 members, a non-null owner equal to the inviter identity, and an owner credential matching the locally accepted group invitation.
 
-The pinned OpenMLS harness measured the positive 16-member application-bound case: 6,622-byte Welcome, 6,962-byte signed COSE, and 7,094-byte minimum complete envelope. It therefore occupies the 8,192-byte padding class and is BLE/WLAN-only. This does not raise the LoRa ceiling. A bootstrap is eligible for LoRa only when its complete padded envelope is one of the four LoRa sizes in section 9.
+The pinned OpenMLS harness measured the positive 16-member application-bound case with a provider-random 32-byte group ID: 474-byte KeyPackage, 6,625-byte Welcome, 6,965-byte signed COSE, and 7,097-byte minimum complete envelope. The smallest fitting class is therefore 8,192 bytes, and this bootstrap is BLE/WLAN-only. This does not raise the LoRa ceiling. A bootstrap is eligible for LoRa only when its complete padded envelope is one of the four LoRa sizes in section 9.
 
 ### 4.3 QR contact card
 

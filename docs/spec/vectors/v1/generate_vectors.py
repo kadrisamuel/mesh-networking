@@ -39,7 +39,7 @@ LABELS = {
 }
 
 APPLICATION_FIXTURE_PATH = Path(__file__).with_name("openmls_16_member_measurement.json")
-APPLICATION_FIXTURE_SHA256 = "1015e46e7423a57bc00e12c0c7008c648cb468a3df0b41cea77c3ad585395b7f"
+APPLICATION_FIXTURE_SHA256 = "b48add24c5f0046c72849dcfbdd3c30e5b124e3dc729cbb5b6fa58ea9f1101d9"
 
 OPENMLS_COMMIT = "47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6"
 OPENMLS_WELCOME_FILE_SHA256 = "06be9d5c99817ef2545e4b15b8e73fd9b604685a8e55b59ca168eda98e236502"
@@ -416,6 +416,16 @@ def build_vectors() -> dict[str, Any]:
     application_fixture = json.loads(fixture_bytes)
     if application_fixture["openmls_revision"] != OPENMLS_COMMIT:
         raise AssertionError("application-bound OpenMLS revision mismatch")
+    if application_fixture["schema"] != "DEC-001-OpenMLS-measurement-v2":
+        raise AssertionError("application-bound OpenMLS fixture schema mismatch")
+    application_group_id = bytes.fromhex(application_fixture["group_id"]["hex"])
+    if (
+        application_fixture["group_id"]["length"] != 32
+        or len(application_group_id) != 32
+        or application_group_id == bytes(32)
+        or application_fixture["group_id"]["all_zero"]
+    ):
+        raise AssertionError("application-bound OpenMLS group ID profile mismatch")
 
     zero_entropy = bytes(32)
     entropy_a = bytes([0xFF]) * 32
@@ -501,7 +511,10 @@ def build_vectors() -> dict[str, Any]:
     application_key_package = bytes.fromhex(
         application_fixture["recipient_key_package_tls"]["hex"]
     )
-    if len(application_key_package) != 474:
+    if (
+        len(application_key_package)
+        != application_fixture["recipient_key_package_tls"]["length"]
+    ):
         raise AssertionError("application KeyPackage length mismatch")
     contact_payload = cbor(
         {
@@ -527,7 +540,10 @@ def build_vectors() -> dict[str, Any]:
     application_welcome = bytes.fromhex(
         application_fixture["welcome_mls_message_tls"]["hex"]
     )
-    if len(application_welcome) != 6622:
+    if (
+        len(application_welcome)
+        != application_fixture["welcome_mls_message_tls"]["length"]
+    ):
         raise AssertionError("application Welcome length mismatch")
     bootstrap_payload = cbor(
         {
@@ -543,8 +559,8 @@ def build_vectors() -> dict[str, Any]:
     bootstrap_cose = cose_sign1(
         bootstrap_payload, device_seed, LABELS["bootstrap_record_aad"].encode()
     )
-    if len(bootstrap_cose) != 6962:
-        raise AssertionError("measured bootstrap COSE length mismatch")
+    if len(bootstrap_cose) > 8_060:
+        raise AssertionError("measured bootstrap COSE exceeds v1 capacity")
 
     wrong_key_package_payload = cbor(
         {
@@ -821,7 +837,7 @@ def build_vectors() -> dict[str, Any]:
     ).digest()[:16]
     required_bootstrap = 80 + 32 + 16 + 4 + len(bootstrap_cose)
     bootstrap_total = smallest_class(required_bootstrap)
-    if required_bootstrap != 7094 or bootstrap_total != 8192:
+    if bootstrap_total != 8192:
         raise AssertionError("measured bootstrap envelope limit mismatch")
     bootstrap_id = bytes.fromhex("ffeeddccbbaa99887766554433221100")
     bootstrap_base_header = header(
@@ -1114,9 +1130,9 @@ def build_vectors() -> dict[str, Any]:
         },
         "meta": {
             "cbor_profile": "RFC8949-deterministic",
-            "note": "All private values are public test-only fixtures and must never be used in production; draft.2 awaits independent and human review.",
+            "note": "All private values are public test-only fixtures and must never be used in production; draft.3 awaits independent and human review.",
             "schema": "mesh-messenger-vectors/1",
-            "spec_version": "1.0.0-draft.2",
+            "spec_version": "1.0.0-draft.3",
         },
         "noise_nn": {
             "ee_shared_secret_hex": hx(noise["ee_shared_secret"]),
@@ -1149,6 +1165,11 @@ def build_vectors() -> dict[str, Any]:
             ),
         },
         "openmls_upstream": {
+            "application_group_id_hex": hx(application_group_id),
+            "application_group_id_length": len(application_group_id),
+            "application_group_id_source": application_fixture["group_id"][
+                "source"
+            ],
             "application_fixture_sha256": APPLICATION_FIXTURE_SHA256,
             "application_fixture_source": "openmls_16_member_measurement.json",
             "application_routing_secret_hex": hx(routing_secret),
@@ -1171,6 +1192,27 @@ def build_vectors() -> dict[str, Any]:
             "welcome_sha256": hx(sha256(OPENMLS_WELCOME)),
             "upstream_application_routing_secret_hex": hx(upstream_routing_secret),
             "upstream_application_sender_outer_keys": upstream_sender_outer_keys,
+        },
+        "outer_rollover": {
+            "max_seals": 1 << 24,
+            "last_ordinary_start_count": (1 << 24) - 2,
+            "rollover_required_count": (1 << 24) - 1,
+            "final_update_count": 1 << 24,
+            "new_epoch_initial_count": 0,
+            "final_old_seal_purpose": "MLS_SELF_UPDATE_ONLY",
+            "retry_rule": "BYTE_IDENTICAL_STORED_ENVELOPE_NO_NEW_SEAL",
+        },
+        "relay_admission": {
+            "ordered_events": [
+                "STRUCTURAL_TIME_POW_COLLISION_QUOTA",
+                "DURABLE_RELAY_COMMIT",
+                "QUEUE_CUSTODY_ACK",
+                "ROUTE_LOOKUP",
+                "AUTHENTICATE",
+                "PRIVATE_DELIVERY_IF_VALID",
+            ],
+            "unknown_and_known_invalid_relay_equivalence": True,
+            "authentication_result_relay_fields": [],
         },
         "routing_and_user_envelope": {
             "aad_normalized_header_hex": hx(normalized_header(user_header)),

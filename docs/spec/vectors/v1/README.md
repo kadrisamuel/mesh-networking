@@ -1,10 +1,10 @@
 # Normative v1 draft vectors
 
-- Status: Draft — draft.1 final review failed; draft.2 awaits independent reproduction and human security approval
+- Status: Draft — prior final reviews failed; draft.3 awaits independent reproduction and human security approval
 - Vector schema: `mesh-messenger-vectors/1`
-- Specification: `1.0.0-draft.2`
-- Checked-in `vectors.json` SHA-256: `df345ab74cf40e6508c82171a77de3b213838ed6d4a3794b93d0af085fb277ab`
-- OpenMLS application fixture SHA-256: `1015e46e7423a57bc00e12c0c7008c648cb468a3df0b41cea77c3ad585395b7f`
+- Specification: `1.0.0-draft.3`
+- Checked-in `vectors.json` SHA-256: `a143cb7c2701c70f56c05dca9f3af37edb6ffe36a07d548c7e7effa0a634022e`
+- OpenMLS application fixture SHA-256: `b48add24c5f0046c72849dcfbdd3c30e5b124e3dc729cbb5b6fa58ea9f1101d9`
 
 `vectors.json` is generated, never hand-edited. Every private value is deterministic public test material and MUST NOT be used in production.
 
@@ -39,20 +39,22 @@ The harness command must satisfy every assertion in `openmls_harness/README.md`.
 | `openmls_upstream` | pinned official suite-`0x0001` fixtures and exporter KAT; application harness digest; routing exporter and all 16 four-byte sender contexts/outer keys |
 | `routing_and_user_envelope` | actual harness-produced MLS application message, matching leaf-0 outer key, routing tag, exact header normalization, AES-128-GCM, proof of work, complete 512-byte envelope |
 | `duplicate_merge` | valid mutable variants and a complete same-ID/different-content collision fixture |
-| `bootstrap_envelope` | measured positive 16-member signed record, RFC 9180 HPKE Base values, 7,094-byte minimum, exact 8,192-byte padded envelope, proof of work |
+| `bootstrap_envelope` | measured positive 16-member signed record, RFC 9180 HPKE Base values, 6,965-byte COSE, 7,097-byte minimum, exact 8,192-byte padded envelope, proof of work |
 | `application_cbor` | text, delivery receipt, and device-replacement notice variants |
 | `noise_nn` | empty 32/48-byte NN handshakes, handshake hash, split keys, both transport directions, and pinned `snow` cross-check |
 | `ble_and_wlan` | handshake and transport frames/chunks plus HELLO, INVENTORY, REQUEST, PUSH, both custody statuses, all GOODBYE reasons, and both ERROR reasons |
 | `lora` | all four size/count/final-prefix mappings, complete 180-byte frames, two ignored final-tail values, and frame/envelope digests |
 | `platform_storage_wrap` | `L_DATABASE_WRAP_AAD`; exact Android 86-byte AES-GCM record; iOS/macOS Keychain profiles; Windows DPAPI entropy and deterministic opaque-record encoding; Ubuntu Secret Service profile |
 | `linux_storage_wrap` | RFC 7914 scrypt parameters/output and exact 92-byte fallback record |
+| `outer_rollover` | exact `MAX_SEALS` boundary counts, reserved self-Update purpose, zero new-epoch counter, and byte-identical stored-retry rule |
+| `relay_admission` | commit/ACK-before-route event order, empty authentication-derived relay-field set, and unknown/known-invalid equivalence requirement |
 | `uuids` | RFC 9562 UUIDv5 inputs and fixed BLE UUIDs |
 
 Padding uses explicit ascending byte patterns and LoRa final padding uses `a5`/`5a` solely for reproducibility. Production uses fresh OS CSPRNG bytes.
 
-The checked application fixture was generated at OpenMLS commit `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6`. It contains 199-byte application credentials, a 474-byte KeyPackage, a 6,622-byte complete TLS `MlsMessage` Welcome, a successful 16-member join with no external tree, 16 distinct per-sender outer keys, and a recipient-processed application message whose authenticated sender is leaf 0. The negative Welcome uses an outsider's valid application-bound KeyPackage and produces `NoMatchingKeyPackage`. The upstream OpenMLS case remains valid upstream but deliberately fails the separate application binding.
+The checked application fixture was generated at OpenMLS commit `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6` with a fresh nonzero provider-random 32-byte group ID. It contains 199-byte application credentials, a 474-byte KeyPackage, a 6,625-byte complete TLS `MlsMessage` Welcome, a 224-byte application message, a successful 16-member join with no external tree, 16 distinct per-sender outer keys, and a recipient-processed application message whose authenticated sender is leaf 0. The negative Welcome uses an outsider's valid application-bound KeyPackage and produces `NoMatchingKeyPackage`. The upstream OpenMLS case remains valid upstream but deliberately fails the separate application binding.
 
-Both generators first reproduce case zero's official exporter result, derive all application-defined upstream exporter contexts independently, then verify and consume the retained positive fixture. They reproduce the pinned `snow.txt` case before producing the application-prologue empty handshakes. Any source digest, KAT, application credential, size, sender context, or negative-result mismatch terminates generation.
+Both generators first reproduce case zero's official exporter result, derive all application-defined upstream exporter contexts independently, then verify and consume the retained positive fixture. From its measured bytes they independently derive the 6,965-byte bootstrap COSE, 7,097-byte minimum envelope, and smallest fitting 8,192-byte class. They reproduce the pinned `snow.txt` case before producing the application-prologue empty handshakes. Any source digest, group-ID profile, KAT, application credential, size, sender context, or negative-result mismatch terminates generation.
 
 ## Standards conformance incorporated by reference
 
