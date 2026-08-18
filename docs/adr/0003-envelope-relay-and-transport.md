@@ -1,7 +1,7 @@
 # ADR-0003: Envelope, relay, and transport baseline
 
 - Status: Draft — independent security review, RF qualification, and human approval required
-- Decision date: 2026-08-18
+- Decision date: 2026-08-19
 - Scope: DEC-001 only
 
 ## Context
@@ -30,7 +30,7 @@ Delivery states are `queued`, `accepted_by_mesh`, `delivered`, and `expired`. A 
 
 ## Approval blockers
 
-- The outer composition and bootstrap path have not received human independent cryptographic approval; the preserved draft.1 review failed and draft.2 has not been independently reviewed.
+- The outer composition and bootstrap path have not received human independent cryptographic approval; the preserved draft.1 and draft.2 reviews failed and draft.3 has not been independently reviewed.
 - BLE behavior, RF airtime, range, duty cycle, loss, battery, and timing claims lack physical measurements.
 - EU 868 operation requires a qualified human to confirm the device, antenna, effective radiated power, firmware configuration, venue, and local Swedish rules before transmission.
 - The pinned Meshtastic firmware is a beta release and needs explicit human risk acceptance.

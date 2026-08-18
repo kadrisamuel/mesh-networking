@@ -1,12 +1,12 @@
-# Protocol specification v1.0.0-draft.2
+# Protocol specification v1.0.0-draft.3
 
 - Status: Draft — independent security review and human approval required
-- Decision set: DEC-001, 2026-08-18
+- Decision set: DEC-001, 2026-08-19
 - Wire version: 1
 
 The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative. Integers are unsigned and big-endian unless explicitly stated. Byte offsets are zero-based. Parsers MUST reject non-canonical encodings, trailing data outside a fixed padding class, duplicate CBOR keys, indefinite CBOR items, unsupported values, nonzero reserved bits, and integer overflow. There is no version fallback.
 
-Cryptographic operations, labels, and keys are defined in `CRYPTOGRAPHY_V1.md`. Golden bytes are in `vectors/v1/vectors.json`. Draft.2 corrects the eight findings in the preserved failed draft.1 review and has not yet passed a new independent review.
+Cryptographic operations, labels, and keys are defined in `CRYPTOGRAPHY_V1.md`. Golden bytes are in `vectors/v1/vectors.json`. Draft.3 corrects the eight findings in the preserved failed draft.1 review and four findings in the preserved failed draft.2 review; it has not passed a new independent review.
 
 ## 1. Limits
 

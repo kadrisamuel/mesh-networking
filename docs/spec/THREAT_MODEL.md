@@ -1,7 +1,7 @@
-# Threat model v1.0.0-draft.2
+# Threat model v1.0.0-draft.3
 
 - Status: Draft — independent security review and human approval required
-- Decision set: DEC-001, 2026-08-18
+- Decision set: DEC-001, 2026-08-19
 - Applies to: architecture/protocol/cryptography profile v1 drafts
 
 This is a laboratory-prototype threat model, not a security certification. A passing test suite does not authorize emergency or high-risk use.
@@ -167,7 +167,7 @@ Redacted diagnostics may contain only exact software versions, coarse platform m
 
 The following are explicit blockers:
 
-- **Security:** the preserved draft.1 independent review failed with eight findings. Draft.2 corrective work has not received a new independent result, and no human reviewer has approved recovery/credential semantics, MLS ownership enforcement, exporter-derived per-sender outer encryption, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
+- **Security:** the preserved draft.1 independent review failed with eight findings and the draft.2 review failed with four findings. Draft.3 corrective work has not received a new independent result, and no human reviewer has approved recovery/credential semantics, MLS ownership enforcement, exporter-derived per-sender outer encryption and crash-safe rollover, route-custody indistinguishability, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
 - **Hardware:** no actual phone, desktop, radio, antenna, battery, or secure-store extraction evidence is recorded.
 - **RF/legal:** no qualified person has approved Sweden/EU transmit conditions for an actual configuration; the engineering profile is not legal advice.
 - **Licensing/distribution:** AGPL/store terms, linked SQLCipher/OpenMLS dependencies, Meshtastic GPL/generated protobuf treatment, cryptography controls, notices/source obligations, and distribution territories lack qualified review.

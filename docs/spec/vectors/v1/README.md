@@ -73,4 +73,4 @@ Local vectors cover application-defined derivations and layouts. Production libr
 
 ## Review gate
 
-The preserved final review of draft.1 is `FAIL` and supersedes its preliminary PASS claim. Draft.2's generators currently reproduce locally, but no new independent review has occurred. A new independent reproducer must verify this entire corrective revision and explicitly dispose all eight findings; a named human security reviewer must then accept the result against an immutable source revision. Until then these vectors and every dependent decision remain drafts.
+The preserved final reviews of draft.1 and draft.2 are both `FAIL`; the former supersedes its preliminary PASS claim. Draft.3's generators reproduce locally, but no independent review has occurred. A new independent reproducer must verify this entire corrective revision and explicitly dispose all twelve preserved findings; a named human security reviewer must then accept the result against an immutable source revision. Until then these vectors and every dependent decision remain drafts.

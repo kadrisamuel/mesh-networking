@@ -1,10 +1,10 @@
-# Cryptography specification v1.0.0-draft.2
+# Cryptography specification v1.0.0-draft.3
 
 - Status: Draft — independent cryptographic review and human approval required
-- Decision set: DEC-001, 2026-08-18
+- Decision set: DEC-001, 2026-08-19
 - Cryptographic profile: `mesh-messenger-crypto/1`
 
-This document selects standard constructions; it does not define a new primitive. An independent technical review of draft.1 failed with eight findings; the preserved report is `../adr/reviews/DEC-001-independent-review-fail-2026-08-18.txt`. Draft.2 is corrective work and has not passed independent review. Implementation remains blocked until a human independent cryptographic reviewer accepts the composition and `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
+This document selects standard constructions; it does not define a new primitive. Independent technical reviews of draft.1 and draft.2 failed; the reports are preserved in `../adr/reviews/`. Draft.3 is corrective work and has not passed independent review. Implementation remains blocked until a human independent cryptographic reviewer accepts the composition and `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
 
 ## 1. Primitive registry
 
@@ -347,5 +347,5 @@ The following remain approval blockers, not implementation discretion:
 - human independent review and acceptance of MLS exporter use, HPKE/COSE bootstrap binding, recovery authority, outer AEAD, nonce accounting, and metadata consequences;
 - physical secure-store extraction/lock tests on minimum/current devices;
 - measured scrypt performance and memory behavior on the Ubuntu reference host;
-- a new independent reproduction and human security acceptance after the failed draft.1 review and draft.2 corrections;
+- a new independent reproduction and human security acceptance after the failed draft.1 and draft.2 reviews and draft.3 corrections;
 - human approval of ADR-0002 and ADR-0003 after findings are resolved.
