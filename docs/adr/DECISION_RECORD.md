@@ -9,7 +9,7 @@ This record is not signed. DEC-001 remains blocked and all specifications remain
 | ADR-0003 | Product owner, independent security reviewer, and RF-qualified reviewer | Name, date, source revision, vector digest, RF scope, approve/reject | Not reviewed |
 | ADR-0004 | Product owner, qualified legal reviewer, release owner, and RF-qualified reviewer | Names, dates, source revision, scoped written determinations, approve/reject | Not reviewed |
 | Five normative specifications | Product owner and engineering lead | Names, date, source revision, specification version, approve/reject | Not reviewed |
-| v1 golden vectors | Independent reproducer using `gpt-5.6-sol` at xhigh plus human security reviewer | Both generator commands, byte-identical digest, security-choice checklist, human acceptance | **FAIL** for draft.1 at commit `f00c53d3ff263602937150b4339dd79a230ec4d3` and draft.2 at commit `ee83cbb6cc833a0988ee687e0cbb338454f65c01`. Draft.3 has a locally byte-identical candidate digest `a143cb7c2701c70f56c05dca9f3af37edb6ffe36a07d548c7e7effa0a634022e`, but no new independent or human review result. |
+| v1 golden vectors | Independent reproducer using `gpt-5.6-sol` at xhigh plus human security reviewer | Both generator commands, byte-identical digest, security-choice checklist, human acceptance | **FAIL** for draft.1 at commit `f00c53d3ff263602937150b4339dd79a230ec4d3`, draft.2 at commit `ee83cbb6cc833a0988ee687e0cbb338454f65c01`, and draft.3 at commit `fd871a38e0002ca7c878678a07d05489051d47fd`. Draft.3 reproduced the candidate digest `a143cb7c2701c70f56c05dca9f3af37edb6ffe36a07d548c7e7effa0a634022e`; no human review or approval exists. |
 
 ## Failed independent technical review — supersedes prior PASS claim
 
@@ -34,13 +34,19 @@ The supplied report is preserved verbatim at [`reviews/DEC-001-independent-revie
 
 Draft.3 is therefore a correction candidate only. No local command, generated digest, or author disposition changes either preserved `FAIL` result.
 
+## Failed draft.3 independent technical review
+
+The final independent review of commit `fd871a38e0002ca7c878678a07d05489051d47fd` reproduced the pinned OpenMLS harness once and the byte-identical vector digest `a143cb7c2701c70f56c05dca9f3af37edb6ffe36a07d548c7e7effa0a634022e`. It returned `FAIL` with one high-severity authentication-dependent session-quota oracle. The review found all twelve earlier findings otherwise resolved, but this new contradiction blocks approval.
+
+The supplied report is preserved verbatim at [`reviews/DEC-001-independent-review-fail-2026-08-21.txt`](reviews/DEC-001-independent-review-fail-2026-08-21.txt), SHA-256 `3d5a44cd0c194621f41ef10e9a34edc74a0d7bae8db06a443b66c24f41aefbea`. A subsequent quota correction is a draft change only and does not alter this `FAIL` or constitute review or human approval.
+
 ## Approval semantics
 
 An approval is valid only when it identifies all reviewed files, their Git tree or per-file SHA-256 digests, the reviewer, date, outcome, and any conditions. Conditional or partial approval leaves dependent implementation blocked. Any normative edit after approval invalidates the affected approval and requires a new record.
 
 ## Recorded blockers at draft publication
 
-1. A new independent cryptographic composition review and human findings acceptance are absent; both preserved final technical results are FAIL.
+1. A new independent cryptographic composition review and human findings acceptance are absent; all three preserved final technical results are FAIL.
 2. Human security acceptance of the reproduced vectors and security-choice checklist is absent.
 3. Reference phones, desktops, and radios are not inventoried or physically qualified.
 4. EU/Swedish RF compliance has not been determined for an actual radio/antenna/test venue.

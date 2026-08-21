@@ -230,7 +230,7 @@ Release builds MUST emit no plaintext, recovery words, QR/contact payloads, keys
 
 Implementation remains blocked until all ADRs and specifications are human-approved. Independently:
 
-- security-sensitive implementation remains blocked until a new independent review resolves and accepts all findings from the preserved failed draft.1 and draft.2 reviews and a human reviewer approves the corrected composition and reproduced v1 vectors;
+- security-sensitive implementation remains blocked until a new independent review resolves and accepts all findings from the preserved failed draft.1, draft.2, and draft.3 reviews and a human reviewer approves the corrected composition and reproduced v1 vectors;
 - RF transmission remains blocked until hardware inventory and jurisdiction-specific compliance are signed;
 - public/signed distribution remains blocked until qualified legal review resolves AGPL/store, linked dependencies, generated protobufs, notices/source obligations, cryptography distribution, privacy, and territorial requirements;
 - release signing remains blocked until a human-owned key-custody, notarization, rotation, and incident process is approved;

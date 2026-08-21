@@ -4,7 +4,7 @@
 - Decision set: DEC-001, 2026-08-19
 - Cryptographic profile: `mesh-messenger-crypto/1`
 
-This document selects standard constructions; it does not define a new primitive. Independent technical reviews of draft.1 and draft.2 failed; the reports are preserved in `../adr/reviews/`. Draft.3 is corrective work and has not passed independent review. Implementation remains blocked until a human independent cryptographic reviewer accepts the composition and `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
+This document selects standard constructions; it does not define a new primitive. Independent technical reviews of draft.1, draft.2, and draft.3 failed; the reports are preserved in `../adr/reviews/`. Later corrective work has not passed independent review. Implementation remains blocked until a human independent cryptographic reviewer accepts the composition and `vectors/v1/vectors.json`. The words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, and **MAY** are normative.
 
 ## 1. Primitive registry
 
@@ -347,5 +347,5 @@ The following remain approval blockers, not implementation discretion:
 - human independent review and acceptance of MLS exporter use, HPKE/COSE bootstrap binding, recovery authority, outer AEAD, nonce accounting, and metadata consequences;
 - physical secure-store extraction/lock tests on minimum/current devices;
 - measured scrypt performance and memory behavior on the Ubuntu reference host;
-- a new independent reproduction and human security acceptance after the failed draft.1 and draft.2 reviews and draft.3 corrections;
+- a new independent reproduction and human security acceptance after the failed draft.1, draft.2, and draft.3 reviews and later corrections;
 - human approval of ADR-0002 and ADR-0003 after findings are resolved.

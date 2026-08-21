@@ -1,0 +1,19 @@
+# FAIL
+
+## HIGH
+
+1. Authentication-dependent session quota remains a route/membership oracle. The protocol requires identical session behavior for unknown, known-invalid, and valid routes ([docs/spec/PROTOCOL_V1.md:113](/Users/kadri.samuel/Documents/Projects/Mesh-Networking/docs/spec/PROTOCOL_V1.md:113)), but unauthenticated connections are limited to 64 envelopes/262,144 bytes while authenticated connections may reach 256/1,048,576 ([docs/spec/PROTOCOL_V1.md:204](/Users/kadri.samuel/Documents/Projects/Mesh-Networking/docs/spec/PROTOCOL_V1.md:204)). An attacker can submit a valid captured or member-generated envelope, then cross the lower quota: a member node continues while a nonmember/invalid-route node reaches quota, revealing authentication through session acceptance or closure. `PRO-CUSTODY-001` compares U/I session traces but does not require V’s post-authentication quota behavior to match ([docs/spec/TEST_MATRIX.md:68](/Users/kadri.samuel/Documents/Projects/Mesh-Networking/docs/spec/TEST_MATRIX.md:68)).
+
+   Make session limits unconditional and identical, then test U/I/V at the 64/65-envelope and 262,144-byte boundaries, including ACKs, inventory, forwarding, retention, GOODBYE/error, and closure.
+
+## Prior-finding disposition
+
+- 2026-08-18: (1) shared outer key—resolved with per-sender exporter/counters; (2) 16-member capacity—resolved by the 8,192-byte class; (3) zero recovery entropy—resolved; (4) routing-slot overlap—resolved; (5) direct membership/removal—resolved; (6) vector coverage—resolved; (7) unbounded fragmentation—resolved; (8) Noise payload—resolved.
+- 2026-08-19: (1) custody ACK ordering/storage is resolved, but required route/authentication indistinguishability remains unresolved by the HIGH finding above; (2) rollover deadlock—resolved with reserved final seal, atomic persistence, byte-identical retries, exact boundary/crash schedule, and incoming-transition handling; (3) group-ID profile—resolved; (4) all-loss fragmentation—resolved.
+
+## Reproduction results
+
+- Exact HEAD `fd871a38e0002ca7c878678a07d05489051d47fd`; worktree and index remained clean.
+- OpenMLS harness ran once against pinned `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6` using Rust/Cargo 1.97.1. Result: fresh nonzero 32-byte group ID, 16 members, 199-byte credentials, 474-byte KeyPackage, 6,625-byte Welcome, 224-byte application message, 16 distinct sender keys, leaf-0 processing, no external tree, and `NoMatchingKeyPackage` negative result.
+- Python 3.14.4/cryptography 46.0.7 and Node 25.9.0 outputs were byte-identical to each other and checked `vectors.json`; all SHA-256 digests were `a143cb7c2701c70f56c05dca9f3af37edb6ffe36a07d548c7e7effa0a634022e`. Checked derived sizes were COSE 6,965, minimum envelope 7,097, padded class 8,192.
+- Fragmentation schedule is executable: four all-loss cases create no timer; 1,164 incomplete cases test `599,999,999,999 ns` and exactly 600 seconds; total is 2,293.

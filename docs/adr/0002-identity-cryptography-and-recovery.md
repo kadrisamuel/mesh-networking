@@ -35,7 +35,7 @@ Use only the standards and library constructions named in the cryptography speci
 
 ## Approval blockers
 
-- The preserved draft.1 and draft.2 independent reviews failed. Draft.3 has no new independent result, and no human cryptographic approval of the corrected composition has been recorded.
+- The preserved draft.1, draft.2, and draft.3 independent reviews failed. Later corrections have no new independent result, and no human cryptographic approval of the corrected composition has been recorded.
 - Secure-store behavior, key zeroization, and locked extraction have not been tested on physical minimum/current devices.
 - The Android hardware-backed-key result, Apple Keychain protection class, Windows DPAPI scope, and Ubuntu Secret Service backend must be captured as device evidence; the specified profiles do not by themselves prove hardware-backed storage.
 - Linux fallback usability and memory cost have not been measured on reference hardware.

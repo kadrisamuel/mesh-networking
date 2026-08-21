@@ -167,7 +167,7 @@ Redacted diagnostics may contain only exact software versions, coarse platform m
 
 The following are explicit blockers:
 
-- **Security:** the preserved draft.1 independent review failed with eight findings and the draft.2 review failed with four findings. Draft.3 corrective work has not received a new independent result, and no human reviewer has approved recovery/credential semantics, MLS ownership enforcement, exporter-derived per-sender outer encryption and crash-safe rollover, route-custody indistinguishability, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
+- **Security:** the preserved draft.1 independent review failed with eight findings, the draft.2 review failed with four findings, and the draft.3 review failed with a high-severity authentication-dependent session-quota oracle. Later corrective work has not received a new independent result, and no human reviewer has approved recovery/credential semantics, MLS ownership enforcement, exporter-derived per-sender outer encryption and crash-safe rollover, route-custody indistinguishability, HPKE bootstrap binding, nonce limits, padding/metadata, lock boundary, or parser state machines.
 - **Hardware:** no actual phone, desktop, radio, antenna, battery, or secure-store extraction evidence is recorded.
 - **RF/legal:** no qualified person has approved Sweden/EU transmit conditions for an actual configuration; the engineering profile is not legal advice.
 - **Licensing/distribution:** AGPL/store terms, linked SQLCipher/OpenMLS dependencies, Meshtastic GPL/generated protobuf treatment, cryptography controls, notices/source obligations, and distribution territories lack qualified review.
