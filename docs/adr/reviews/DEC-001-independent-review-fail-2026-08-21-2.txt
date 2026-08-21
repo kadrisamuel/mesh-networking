@@ -1,0 +1,7 @@
+# FAIL
+
+- MEDIUM — `docs/spec/TEST_MATRIX.md:68` incorrectly requires generic quota behavior for a 256-byte offer after exactly 262,144 bytes, even though the unconditional byte limit is 1,048,576 (`docs/spec/PROTOCOL_V1.md:204`). That offer brings the total to 262,400 and must be accepted identically by U/I/V. Change this boundary case to require acceptance; reserve generic quota behavior for the 257th offer or the first offer exceeding 1,048,576 bytes.
+
+Disposition: the 2026-08-21 HIGH is resolved normatively—U/I/V share unconditional per-direction limits, authentication cannot affect counters/ACKs/inventory/forwarding/errors/closure (`docs/spec/PROTOCOL_V1.md:26,113,204`), and `HELLO max_offer=256` remains consistent (`docs/spec/PROTOCOL_V1.md:224`). It is not fully resolved as an acceptance package because the required lower-byte-boundary test contradicts those rules.
+
+Scope/status: clean HEAD `06e1fe4e736dbed96d2c0339935f782a839bb05b`; reviewed only `fd871a38..HEAD` (one commit, 11 documentation files). Review/threat-model records remain correctly failed/unapproved. No unrelated normative change found; `git diff --check` passed. OpenMLS and vectors were not rerun.

@@ -40,6 +40,12 @@ The final independent review of commit `fd871a38e0002ca7c878678a07d05489051d47fd
 
 The supplied report is preserved verbatim at [`reviews/DEC-001-independent-review-fail-2026-08-21.txt`](reviews/DEC-001-independent-review-fail-2026-08-21.txt), SHA-256 `3d5a44cd0c194621f41ef10e9a34edc74a0d7bae8db06a443b66c24f41aefbea`. A subsequent quota correction is a draft change only and does not alter this `FAIL` or constitute review or human approval.
 
+## Failed quota-correction focused re-review
+
+The focused read-only re-review of commit `06e1fe4e736dbed96d2c0339935f782a839bb05b` returned `FAIL`: the normative quota was route-independent, but `PRO-CUSTODY-001` incorrectly required quota behavior for the first offer above the former 262,144-byte boundary even though it remained below the common 1,048,576-byte limit.
+
+The supplied report is preserved verbatim at [`reviews/DEC-001-independent-review-fail-2026-08-21-2.txt`](reviews/DEC-001-independent-review-fail-2026-08-21-2.txt), SHA-256 `3024874a4c01d0bfff0033c48cf47aaf862e2e1f2a25a83f0f4d5f53f3958144`. The later schedule correction remains an unreviewed draft change and does not approve DEC-001.
+
 ## Approval semantics
 
 An approval is valid only when it identifies all reviewed files, their Git tree or per-file SHA-256 digests, the reviewer, date, outcome, and any conditions. Conditional or partial approval leaves dependent implementation blocked. Any normative edit after approval invalidates the affected approval and requires a new record.
