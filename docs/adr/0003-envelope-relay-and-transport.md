@@ -30,7 +30,7 @@ Delivery states are `queued`, `accepted_by_mesh`, `delivered`, and `expired`. A 
 
 ## Approval blockers
 
-- The outer composition and bootstrap path have not received human independent cryptographic approval; the preserved draft.1, draft.2, and draft.3 reviews failed.
+- The cumulative independent technical review passed at commit `bd82d16833c2f435aef68ca0b048f1226bd72958` after the preserved failed reviews and corrective commits. The outer composition and bootstrap path have not received named human independent cryptographic approval.
 - BLE behavior, RF airtime, range, duty cycle, loss, battery, and timing claims lack physical measurements.
 - EU 868 operation requires a qualified human to confirm the device, antenna, effective radiated power, firmware configuration, venue, and local Swedish rules before transmission.
 - The pinned Meshtastic firmware is a beta release and needs explicit human risk acceptance.

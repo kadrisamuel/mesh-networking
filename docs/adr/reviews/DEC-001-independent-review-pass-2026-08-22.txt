@@ -1,0 +1,14 @@
+# PASS
+
+No actionable findings.
+
+`docs/spec/TEST_MATRIX.md:68` correctly requires fresh U/I/V sessions and:
+
+- Accepts 64 × 4,096 bytes plus 256 bytes.
+- Accepts 256 × 256 bytes; rejects entry 257.
+- Accepts 128 × 8,192 bytes; rejects the next 256 bytes.
+- Requires identical ACK, session, forwarding, error, GOODBYE, and closure behavior across U/I/V.
+
+This matches the unconditional per-direction limits and route-independence requirements in `docs/spec/PROTOCOL_V1.md:26,113,204`; `HELLO max_offer=256` remains consistent at line 224.
+
+Reviewed only `06e1fe4e..bd82d168`; five documentation files changed. Review records consistently preserve both FAIL reports and keep DEC-001 unapproved. HEAD is exact and the worktree is clean; `git diff --check` passed. Unaffected evidence was not rerun.
